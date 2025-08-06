@@ -1,0 +1,45 @@
+{
+  "name": "rss-llm-tts-frontend",
+  "version": "1.0.0",
+  "description": "RSS聚合新闻+LLM对话生成+语音合成系统前端",
+  "private": true,
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.20.1",
+    "axios": "^1.6.2",
+    "antd": "^5.12.8",
+    "@ant-design/icons": "^5.2.6",
+    "dayjs": "^1.11.10",
+    "react-query": "^3.39.3",
+    "react-hook-form": "^7.48.2",
+    "react-player": "^2.13.0",
+    "html-react-parser": "^5.0.7",
+    "react-markdown": "^9.0.1",
+    "remark-gfm": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.45",
+    "@types/react-dom": "^18.2.18",
+    "@vitejs/plugin-react": "^4.2.1",
+    "vite": "^5.0.10",
+    "typescript": "^5.3.3"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  }
+} 

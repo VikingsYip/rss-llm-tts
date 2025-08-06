@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<opml version="2.0">
+  <head>
+    <title>RSS聚合新闻系统 - 示例RSS源</title>
+    <dateCreated>Mon, 01 Jan 2024 12:00:00 GMT</dateCreated>
+    <dateModified>Mon, 01 Jan 2024 12:00:00 GMT</dateModified>
+    <ownerName>RSS Reporter Team</ownerName>
+    <ownerEmail>admin@rssreporter.com</ownerEmail>
+    <expansionState></expansionState>
+    <vertScrollState>1</vertScrollState>
+    <windowTop>146</windowTop>
+    <windowLeft>107</windowLeft>
+    <windowBottom>1016</windowBottom>
+    <windowRight>1016</windowRight>
+  </head>
+  <body>
+    <outline text="科技新闻" title="科技新闻">
+      <outline text="36氪" title="36氪" type="rss" xmlUrl="https://www.36kr.com/feed" htmlUrl="https://www.36kr.com/" category="科技"/>
+      <outline text="TechCrunch中文版" title="TechCrunch中文版" type="rss" xmlUrl="https://techcrunch.cn/feed/" htmlUrl="https://techcrunch.cn/" category="科技"/>
+      <outline text="爱范儿" title="爱范儿" type="rss" xmlUrl="https://www.ifanr.com/feed" htmlUrl="https://www.ifanr.com/" category="科技"/>
+      <outline text="少数派" title="少数派" type="rss" xmlUrl="https://sspai.com/feed" htmlUrl="https://sspai.com/" category="科技"/>
+    </outline>
+    
+    <outline text="AI人工智能" title="AI人工智能">
+      <outline text="机器之心" title="机器之心" type="rss" xmlUrl="https://www.jiqizhixin.com/rss" htmlUrl="https://www.jiqizhixin.com/" category="AI"/>
+      <outline text="AI研习社" title="AI研习社" type="rss" xmlUrl="https://ai.yanxishe.com/rss" htmlUrl="https://ai.yanxishe.com/" category="AI"/>
+      <outline text="量子位" title="量子位" type="rss" xmlUrl="https://www.qbitai.com/feed" htmlUrl="https://www.qbitai.com/" category="AI"/>
+    </outline>
+    
+    <outline text="互联网新闻" title="互联网新闻">
+      <outline text="虎嗅网" title="虎嗅网" type="rss" xmlUrl="https://www.huxiu.com/rss/0.xml" htmlUrl="https://www.huxiu.com/" category="互联网"/>
+      <outline text="钛媒体" title="钛媒体" type="rss" xmlUrl="https://www.tmtpost.com/rss.xml" htmlUrl="https://www.tmtpost.com/" category="互联网"/>
+      <outline text="品玩" title="品玩" type="rss" xmlUrl="https://www.pingwest.com/feed" htmlUrl="https://www.pingwest.com/" category="互联网"/>
+    </outline>
+    
+    <outline text="创业投资" title="创业投资">
+      <outline text="创业邦" title="创业邦" type="rss" xmlUrl="https://www.cyzone.cn/rss" htmlUrl="https://www.cyzone.cn/" category="创业"/>
+      <outline text="投资界" title="投资界" type="rss" xmlUrl="https://www.pedaily.cn/rss" htmlUrl="https://www.pedaily.cn/" category="创业"/>
+    </outline>
+    
+    <outline text="开发者资讯" title="开发者资讯">
+      <outline text="InfoQ中文站" title="InfoQ中文站" type="rss" xmlUrl="https://www.infoq.cn/feed" htmlUrl="https://www.infoq.cn/" category="开发"/>
+      <outline text="掘金" title="掘金" type="rss" xmlUrl="https://juejin.cn/rss" htmlUrl="https://juejin.cn/" category="开发"/>
+      <outline text="开源中国" title="开源中国" type="rss" xmlUrl="https://www.oschina.net/news/rss" htmlUrl="https://www.oschina.net/" category="开发"/>
+    </outline>
+  </body>
+</opml> 
