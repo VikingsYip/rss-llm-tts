@@ -1,43 +1,68 @@
-import React, { useState } from 'react';
-import { Card, Table, Button, Space, Tag, Modal, Form, Input, Select, InputNumber, message } from 'antd';
-import { PlusOutlined, PlayCircleOutlined, DownloadOutlined, DeleteOutlined, EyeOutlined } from '@ant-design/icons';
+import React, { useState, useEffect } from 'react';
+import { 
+  Card, 
+  Table, 
+  Button, 
+  Space, 
+  Tag, 
+  Modal, 
+  Form, 
+  Input, 
+  Select, 
+  InputNumber, 
+  message,
+  Spin,
+  Empty,
+  Tooltip,
+  Typography,
+  List,
+  Checkbox,
+  Divider,
+  Row,
+  Col
+} from 'antd';
+import { 
+  PlusOutlined, 
+  PlayCircleOutlined, 
+  DownloadOutlined, 
+  DeleteOutlined, 
+  EyeOutlined,
+  ReloadOutlined,
+  SyncOutlined,
+  SearchOutlined,
+  FileTextOutlined
+} from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 
 const { Option } = Select;
+const { Title } = Typography;
+const { Search } = Input;
+const { Text } = Typography;
 
 const Dialogues = () => {
-  const [dialogues, setDialogues] = useState([
-    {
-      id: 1,
-      title: '主持人与嘉宾的访谈对话',
-      dialogueType: 'interview',
-      character1: '主持人',
-      character2: '嘉宾',
-      status: 'completed',
-      rounds: 8,
-      newsCount: 5,
-      audioFile: 'dialogue_1_1234567890.mp3',
-      duration: 120,
-      createdAt: '2024-01-01 12:00:00'
-    },
-    {
-      id: 2,
-      title: '两位评论员分析热点话题',
-      dialogueType: 'commentary',
-      character1: '评论员A',
-      character2: '评论员B',
-      status: 'generating',
-      rounds: 6,
-      newsCount: 3,
-      audioFile: null,
-      duration: null,
-      createdAt: '2024-01-01 13:00:00'
-    }
-  ]);
-
+  const [dialogues, setDialogues] = useState([]);
+  const [loading, setLoading] = useState(false);
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [form] = Form.useForm();
-  const [loading, setLoading] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [pagination, setPagination] = useState({
+    current: 1,
+    pageSize: 10,
+    total: 0
+  });
+  
+  // 新闻选择相关状态
+  const [newsList, setNewsList] = useState([]);
+  const [newsLoading, setNewsLoading] = useState(false);
+  const [selectedNews, setSelectedNews] = useState([]);
+  const [newsSearchKeyword, setNewsSearchKeyword] = useState('');
+  const [showNewsSelector, setShowNewsSelector] = useState(false);
+  const [newsPagination, setNewsPagination] = useState({
+    current: 1,
+    pageSize: 10,
+    total: 0
+  });
+  
   const navigate = useNavigate();
 
   const typeMap = {
@@ -53,56 +78,254 @@ const Dialogues = () => {
     failed: { text: '失败', color: 'error' },
   };
 
-  const handleCreateDialogue = async (values) => {
+  // 获取对话列表
+  const fetchDialogues = async (page = 1, pageSize = 10) => {
     setLoading(true);
     try {
-      // 这里应该调用API创建对话
-      console.log('创建对话:', values);
-      const newDialogue = {
-        id: Date.now(),
-        title: values.title,
-        dialogueType: values.dialogueType,
-        character1: values.character1,
-        character2: values.character2,
-        status: 'generating',
-        rounds: values.rounds,
-        newsCount: values.newsCount,
-        audioFile: null,
-        duration: null,
-        createdAt: new Date().toLocaleString()
-      };
-      setDialogues([newDialogue, ...dialogues]);
-      message.success('对话创建成功，正在生成中...');
-      setIsModalVisible(false);
-      form.resetFields();
+      const params = new URLSearchParams({
+        page: page.toString(),
+        limit: pageSize.toString()
+      });
+
+      const response = await fetch(`/api/dialogue?${params}`);
+      const data = await response.json();
+      
+      if (data.success) {
+        setDialogues(data.data);
+        setPagination({
+          current: data.pagination.page,
+          pageSize: data.pagination.limit,
+          total: data.pagination.total
+        });
+      } else {
+        message.error('获取对话列表失败');
+      }
     } catch (error) {
-      message.error('创建对话失败');
+      console.error('获取对话列表失败:', error);
+      message.error('获取对话列表失败');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDelete = (id) => {
+  // 获取新闻列表
+  const fetchNews = async (page = 1, keyword = '') => {
+    setNewsLoading(true);
+    try {
+      const params = new URLSearchParams({
+        page: page.toString(),
+        limit: '20',
+        keyword: keyword
+      });
+
+      const response = await fetch(`/api/news?${params}`);
+      const data = await response.json();
+      
+      if (data.success) {
+        setNewsList(data.data.news);
+        setNewsPagination({
+          current: data.data.pagination.page,
+          pageSize: data.data.pagination.limit,
+          total: data.data.pagination.total
+        });
+      } else {
+        message.error('获取新闻列表失败');
+      }
+    } catch (error) {
+      console.error('获取新闻列表失败:', error);
+      message.error('获取新闻列表失败');
+    } finally {
+      setNewsLoading(false);
+    }
+  };
+
+  // 组件加载时获取对话列表
+  useEffect(() => {
+    fetchDialogues();
+  }, []);
+
+  // 处理新闻搜索
+  const handleNewsSearch = (value) => {
+    setNewsSearchKeyword(value);
+    fetchNews(1, value);
+  };
+
+  // 处理新闻分页
+  const handleNewsPagination = (page) => {
+    fetchNews(page, newsSearchKeyword);
+  };
+
+  // 处理新闻选择
+  const handleNewsSelect = (newsId, checked) => {
+    if (checked) {
+      const news = newsList.find(n => n.id === newsId);
+      if (news && selectedNews.length < 10) { // 限制最多选择10条新闻
+        setSelectedNews([...selectedNews, news]);
+      } else if (selectedNews.length >= 10) {
+        message.warning('最多只能选择10条新闻');
+      }
+    } else {
+      setSelectedNews(selectedNews.filter(n => n.id !== newsId));
+    }
+  };
+
+  // 移除已选择的新闻
+  const handleRemoveNews = (newsId) => {
+    setSelectedNews(selectedNews.filter(n => n.id !== newsId));
+  };
+
+  // 清空已选择的新闻
+  const handleClearNews = () => {
+    setSelectedNews([]);
+  };
+
+  // 创建对话
+  const handleCreateDialogue = async (values) => {
+    // 移除强制选择新闻的限制，因为系统可以使用随机新闻
+    // if (selectedNews.length === 0) {
+    //   message.error('请至少选择一条新闻');
+    //   return;
+    // }
+
+    setCreating(true);
+    try {
+      const requestData = {
+        ...values,
+        newsIds: selectedNews.map(n => n.id),
+        newsCount: selectedNews.length
+      };
+
+      const response = await fetch('/api/dialogue', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestData),
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        message.success(result.message);
+        setIsModalVisible(false);
+        form.resetFields();
+        setSelectedNews([]);
+        setShowNewsSelector(false);
+        // 刷新对话列表
+        fetchDialogues();
+      } else {
+        message.error(`创建失败: ${result.message}`);
+      }
+    } catch (error) {
+      console.error('创建对话失败:', error);
+      message.error('创建对话失败');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  // 删除对话
+  const handleDelete = async (id) => {
     Modal.confirm({
       title: '确认删除',
       content: '确定要删除这个对话吗？',
-      onOk: () => {
-        setDialogues(dialogues.filter(d => d.id !== id));
-        message.success('删除成功');
+      onOk: async () => {
+        try {
+          const response = await fetch(`/api/dialogue/${id}`, {
+            method: 'DELETE',
+          });
+
+          const result = await response.json();
+          
+          if (result.success) {
+            message.success('删除成功');
+            fetchDialogues();
+          } else {
+            message.error(`删除失败: ${result.message}`);
+          }
+        } catch (error) {
+          console.error('删除对话失败:', error);
+          message.error('删除对话失败');
+        }
       }
     });
   };
 
-  const handlePlayAudio = (audioFile) => {
-    const audio = new Audio(`/uploads/${audioFile}`);
-    audio.play();
+  // 手动生成对话内容
+  const handleGenerateContent = async (id) => {
+    try {
+      message.loading('正在生成对话内容...', 0);
+      const response = await fetch(`/api/dialogue/${id}/generate`, {
+        method: 'POST',
+      });
+
+      const result = await response.json();
+      message.destroy();
+      
+      if (result.success) {
+        message.success('对话内容生成完成');
+        fetchDialogues();
+      } else {
+        message.error(`生成失败: ${result.message}`);
+      }
+    } catch (error) {
+      message.destroy();
+      console.error('生成对话内容失败:', error);
+      message.error('生成对话内容失败');
+    }
   };
 
+  // 播放音频
+  const handlePlayAudio = (audioFile) => {
+    try {
+      message.loading('正在加载音频...', 0);
+      const audio = new Audio(`/uploads/${audioFile}`);
+      
+      audio.addEventListener('loadstart', () => {
+        message.loading('正在加载音频...', 0);
+      });
+      
+      audio.addEventListener('canplay', () => {
+        message.destroy();
+        message.success('音频加载完成，开始播放');
+      });
+      
+      audio.addEventListener('error', (e) => {
+        message.destroy();
+        console.error('音频播放错误:', e);
+        message.error('音频播放失败，请检查文件是否存在');
+      });
+      
+      audio.addEventListener('ended', () => {
+        message.success('音频播放完成');
+      });
+      
+      const playPromise = audio.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(error => {
+          message.destroy();
+          console.error('音频播放失败:', error);
+          message.error('音频播放失败: ' + error.message);
+        });
+      }
+    } catch (error) {
+      message.destroy();
+      console.error('创建音频对象失败:', error);
+      message.error('音频播放失败');
+    }
+  };
+
+  // 下载音频
   const handleDownloadAudio = (audioFile) => {
     const link = document.createElement('a');
     link.href = `/uploads/${audioFile}`;
     link.download = audioFile;
     link.click();
+  };
+
+  // 处理分页变化
+  const handleTableChange = (pagination) => {
+    fetchDialogues(pagination.current, pagination.pageSize);
   };
 
   const columns = [
@@ -111,6 +334,7 @@ const Dialogues = () => {
       dataIndex: 'title',
       key: 'title',
       width: 200,
+      ellipsis: true,
     },
     {
       title: '类型',
@@ -164,11 +388,12 @@ const Dialogues = () => {
       dataIndex: 'createdAt',
       key: 'createdAt',
       width: 150,
+      render: (time) => new Date(time).toLocaleString(),
     },
     {
       title: '操作',
       key: 'actions',
-      width: 200,
+      width: 250,
       render: (_, record) => (
         <Space>
           <Button 
@@ -178,7 +403,18 @@ const Dialogues = () => {
           >
             查看
           </Button>
-          {record.audioFile && (
+          {record.status === 'generating' && (
+            <Tooltip title="手动生成内容">
+              <Button 
+                type="link" 
+                icon={<SyncOutlined />}
+                onClick={() => handleGenerateContent(record.id)}
+              >
+                生成
+              </Button>
+            </Tooltip>
+          )}
+          {record.audioFile && record.status === 'completed' && (
             <>
               <Button 
                 type="link" 
@@ -210,114 +446,281 @@ const Dialogues = () => {
   ];
 
   return (
-    <div className="dialogues">
-      <Card className="custom-card">
-        <div style={{ marginBottom: 16 }}>
+    <div style={{ padding: '24px' }}>
+      <Title level={2}>对话管理</Title>
+      
+      <Card style={{ marginBottom: 16 }}>
+        <Space>
           <Button 
             type="primary" 
             icon={<PlusOutlined />}
-            onClick={() => setIsModalVisible(true)}
+            onClick={() => {
+              setIsModalVisible(true);
+              setSelectedNews([]);
+              setShowNewsSelector(false);
+            }}
           >
             创建对话
           </Button>
-        </div>
+          <Button 
+            icon={<ReloadOutlined />}
+            onClick={() => fetchDialogues()}
+            loading={loading}
+          >
+            刷新
+          </Button>
+        </Space>
+      </Card>
 
+      <Card>
         <Table
           columns={columns}
           dataSource={dialogues}
           rowKey="id"
+          loading={loading}
           pagination={{
-            pageSize: 10,
+            current: pagination.current,
+            pageSize: pagination.pageSize,
+            total: pagination.total,
             showSizeChanger: true,
             showQuickJumper: true,
             showTotal: (total) => `共 ${total} 条记录`,
           }}
+          onChange={handleTableChange}
           scroll={{ x: 1200 }}
+          locale={{
+            emptyText: <Empty description="暂无对话记录" />
+          }}
         />
-
-        <Modal
-          title="创建新对话"
-          open={isModalVisible}
-          onCancel={() => setIsModalVisible(false)}
-          footer={null}
-          width={600}
-        >
-          <Form
-            form={form}
-            layout="vertical"
-            onFinish={handleCreateDialogue}
-            initialValues={{
-              dialogueType: 'interview',
-              rounds: 8,
-              newsCount: 5,
-            }}
-          >
-            <Form.Item
-              name="title"
-              label="对话标题"
-              rules={[{ required: true, message: '请输入对话标题' }]}
-            >
-              <Input placeholder="请输入对话标题" />
-            </Form.Item>
-
-            <Form.Item
-              name="dialogueType"
-              label="对话类型"
-              rules={[{ required: true, message: '请选择对话类型' }]}
-            >
-              <Select placeholder="请选择对话类型">
-                <Option value="interview">访谈</Option>
-                <Option value="ceo_interview">CEO采访</Option>
-                <Option value="commentary">评论</Option>
-                <Option value="chat">聊天</Option>
-              </Select>
-            </Form.Item>
-
-            <Form.Item
-              name="character1"
-              label="角色1"
-              rules={[{ required: true, message: '请输入角色1名称' }]}
-            >
-              <Input placeholder="例如：主持人" />
-            </Form.Item>
-
-            <Form.Item
-              name="character2"
-              label="角色2"
-              rules={[{ required: true, message: '请输入角色2名称' }]}
-            >
-              <Input placeholder="例如：嘉宾" />
-            </Form.Item>
-
-            <Form.Item
-              name="rounds"
-              label="对话轮次"
-              rules={[{ required: true, message: '请输入对话轮次' }]}
-            >
-              <InputNumber min={1} max={20} style={{ width: '100%' }} />
-            </Form.Item>
-
-            <Form.Item
-              name="newsCount"
-              label="使用的新闻数量"
-              rules={[{ required: true, message: '请输入新闻数量' }]}
-            >
-              <InputNumber min={1} max={20} style={{ width: '100%' }} />
-            </Form.Item>
-
-            <Form.Item>
-              <Space>
-                <Button type="primary" htmlType="submit" loading={loading}>
-                  创建对话
-                </Button>
-                <Button onClick={() => setIsModalVisible(false)}>
-                  取消
-                </Button>
-              </Space>
-            </Form.Item>
-          </Form>
-        </Modal>
       </Card>
+
+      <Modal
+        title="创建新对话"
+        open={isModalVisible}
+        onCancel={() => setIsModalVisible(false)}
+        footer={null}
+        width={800}
+        destroyOnClose
+      >
+        <Form
+          form={form}
+          layout="vertical"
+          onFinish={handleCreateDialogue}
+          initialValues={{
+            dialogueType: 'interview',
+            rounds: 8,
+          }}
+        >
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item
+                name="title"
+                label="对话标题"
+                rules={[{ required: true, message: '请输入对话标题' }]}
+              >
+                <Input placeholder="请输入对话标题" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item
+                name="dialogueType"
+                label="对话类型"
+                rules={[{ required: true, message: '请选择对话类型' }]}
+              >
+                <Select placeholder="请选择对话类型">
+                  <Option value="interview">访谈</Option>
+                  <Option value="ceo_interview">CEO采访</Option>
+                  <Option value="commentary">评论</Option>
+                  <Option value="chat">聊天</Option>
+                </Select>
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item
+                name="character1"
+                label="角色1"
+                rules={[{ required: true, message: '请输入角色1名称' }]}
+              >
+                <Input placeholder="例如：主持人" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item
+                name="character2"
+                label="角色2"
+                rules={[{ required: true, message: '请输入角色2名称' }]}
+              >
+                <Input placeholder="例如：嘉宾" />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item
+                name="rounds"
+                label="对话轮次"
+                rules={[{ required: true, message: '请输入对话轮次' }]}
+              >
+                <InputNumber min={1} max={20} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item label="已选新闻数量">
+                <div style={{ padding: '4px 11px', border: '1px solid #d9d9d9', borderRadius: '6px', backgroundColor: '#fafafa' }}>
+                  {selectedNews.length} 条新闻
+                </div>
+              </Form.Item>
+            </Col>
+          </Row>
+
+          {/* 新闻选择区域 */}
+          <Divider orientation="left">选择新闻素材</Divider>
+          
+          <div style={{ marginBottom: 16 }}>
+            <Space>
+              <Button 
+                type={showNewsSelector ? 'primary' : 'default'}
+                icon={<FileTextOutlined />}
+                onClick={() => {
+                  setShowNewsSelector(!showNewsSelector);
+                  if (!showNewsSelector) {
+                    fetchNews();
+                  }
+                }}
+              >
+                {showNewsSelector ? '隐藏新闻选择器' : '显示新闻选择器'}
+              </Button>
+              {selectedNews.length > 0 && (
+                <Button onClick={handleClearNews}>
+                  清空已选
+                </Button>
+              )}
+            </Space>
+          </div>
+
+          {showNewsSelector && (
+            <div style={{ border: '1px solid #d9d9d9', borderRadius: '6px', padding: '16px', marginBottom: 16 }}>
+              <div style={{ marginBottom: 16 }}>
+                <Search
+                  placeholder="搜索新闻标题或内容"
+                  onSearch={handleNewsSearch}
+                  style={{ width: 300 }}
+                  allowClear
+                />
+              </div>
+
+              <div style={{ maxHeight: '300px', overflow: 'auto' }}>
+                {newsLoading ? (
+                  <div style={{ textAlign: 'center', padding: '20px' }}>
+                    <Spin />
+                  </div>
+                ) : (
+                  <List
+                    dataSource={newsList}
+                    renderItem={(news) => (
+                      <List.Item style={{ padding: '8px 0' }}>
+                        <Checkbox
+                          checked={selectedNews.some(n => n.id === news.id)}
+                          onChange={(e) => handleNewsSelect(news.id, e.target.checked)}
+                        >
+                          <div style={{ marginLeft: 8 }}>
+                            <div style={{ fontWeight: 'bold', marginBottom: 4 }}>
+                              {news.title}
+                            </div>
+                            <div style={{ color: '#666', fontSize: '12px' }}>
+                              {news.summary?.substring(0, 100)}...
+                            </div>
+                            <div style={{ color: '#999', fontSize: '12px', marginTop: 4 }}>
+                              来源: {news.sourceName} | 时间: {new Date(news.publishedAt).toLocaleDateString()}
+                            </div>
+                          </div>
+                        </Checkbox>
+                      </List.Item>
+                    )}
+                    locale={{
+                      emptyText: <Empty description="暂无新闻数据" />
+                    }}
+                  />
+                )}
+              </div>
+
+              {newsPagination.total > 0 && (
+                <div style={{ marginTop: 16, textAlign: 'center' }}>
+                  <Button 
+                    size="small" 
+                    onClick={() => handleNewsPagination(newsPagination.current - 1)}
+                    disabled={newsPagination.current === 1}
+                  >
+                    上一页
+                  </Button>
+                  <span style={{ margin: '0 16px' }}>
+                    第 {newsPagination.current} 页，共 {Math.ceil(newsPagination.total / newsPagination.pageSize)} 页
+                  </span>
+                  <Button 
+                    size="small" 
+                    onClick={() => handleNewsPagination(newsPagination.current + 1)}
+                    disabled={newsPagination.current >= Math.ceil(newsPagination.total / newsPagination.pageSize)}
+                  >
+                    下一页
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 已选新闻展示 */}
+          {selectedNews.length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ marginBottom: 8 }}>
+                <Text strong>已选择的新闻 ({selectedNews.length} 条):</Text>
+              </div>
+              <div style={{ maxHeight: '150px', overflow: 'auto', border: '1px solid #f0f0f0', borderRadius: '6px', padding: '8px' }}>
+                {selectedNews.map((news) => (
+                  <div key={news.id} style={{ 
+                    display: 'flex', 
+                    justifyContent: 'space-between', 
+                    alignItems: 'center',
+                    padding: '4px 0',
+                    borderBottom: '1px solid #f0f0f0'
+                  }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 'bold', fontSize: '12px' }}>
+                        {news.title}
+                      </div>
+                      <div style={{ color: '#666', fontSize: '11px' }}>
+                        {news.sourceName} | {new Date(news.publishedAt).toLocaleDateString()}
+                      </div>
+                    </div>
+                    <Button 
+                      type="link" 
+                      size="small" 
+                      danger
+                      onClick={() => handleRemoveNews(news.id)}
+                    >
+                      移除
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <Form.Item>
+            <Space>
+              <Button type="primary" htmlType="submit" loading={creating}>
+                创建对话
+              </Button>
+              <Button onClick={() => setIsModalVisible(false)}>
+                取消
+              </Button>
+            </Space>
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   );
 };

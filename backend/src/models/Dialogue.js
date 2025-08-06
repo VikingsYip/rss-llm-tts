@@ -12,14 +12,9 @@ const Dialogue = sequelize.define('Dialogue', {
     allowNull: false,
     comment: '对话标题'
   },
-  content: {
-    type: DataTypes.TEXT,
-    allowNull: false,
-    comment: '对话内容(JSON格式)'
-  },
   dialogueType: {
     type: DataTypes.ENUM('interview', 'ceo_interview', 'commentary', 'chat'),
-    defaultValue: 'interview',
+    allowNull: false,
     comment: '对话类型'
   },
   character1: {
@@ -32,45 +27,89 @@ const Dialogue = sequelize.define('Dialogue', {
     allowNull: false,
     comment: '角色2名称'
   },
+  status: {
+    type: DataTypes.ENUM('generating', 'completed', 'failed'),
+    defaultValue: 'generating',
+    comment: '对话状态'
+  },
   rounds: {
     type: DataTypes.INTEGER,
+    allowNull: false,
     defaultValue: 8,
     comment: '对话轮次'
   },
   newsCount: {
     type: DataTypes.INTEGER,
+    allowNull: false,
     defaultValue: 5,
     comment: '使用的新闻数量'
   },
-  status: {
-    type: DataTypes.ENUM('generating', 'completed', 'failed'),
-    defaultValue: 'generating',
-    comment: '生成状态'
-  },
   audioFile: {
-    type: DataTypes.STRING(500),
+    type: DataTypes.STRING(255),
     allowNull: true,
     comment: '音频文件路径'
   },
   duration: {
     type: DataTypes.INTEGER,
     allowNull: true,
-    comment: '音频时长(秒)'
+    comment: '音频时长（秒）'
+  },
+  content: {
+    type: DataTypes.TEXT,
+    allowNull: true,
+    comment: '对话内容（JSON格式）',
+    get() {
+      const value = this.getDataValue('content');
+      if (!value) return null;
+      try {
+        return JSON.parse(value);
+      } catch (error) {
+        return null;
+      }
+    },
+    set(value) {
+      if (value === null || value === undefined) {
+        this.setDataValue('content', null);
+      } else {
+        this.setDataValue('content', JSON.stringify(value));
+      }
+    }
+  },
+  newsIds: {
+    type: DataTypes.TEXT,
+    allowNull: true,
+    comment: '使用的新闻ID列表（JSON格式）',
+    get() {
+      const value = this.getDataValue('newsIds');
+      if (!value) return [];
+      try {
+        return JSON.parse(value);
+      } catch (error) {
+        return [];
+      }
+    },
+    set(value) {
+      if (!value || !Array.isArray(value)) {
+        this.setDataValue('newsIds', JSON.stringify([]));
+      } else {
+        this.setDataValue('newsIds', JSON.stringify(value));
+      }
+    }
+  },
+  errorMessage: {
+    type: DataTypes.TEXT,
+    allowNull: true,
+    comment: '错误信息'
+  },
+  isActive: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: true,
+    comment: '是否启用'
   }
 }, {
   tableName: 'dialogues',
   timestamps: true,
-  indexes: [
-    {
-      fields: ['dialogueType']
-    },
-    {
-      fields: ['status']
-    },
-    {
-      fields: ['createdAt']
-    }
-  ]
+  comment: '对话记录表'
 });
 
 module.exports = Dialogue; 

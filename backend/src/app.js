@@ -14,6 +14,7 @@ const logger = require('./utils/logger');
 const rssRoutes = require('./routes/rss');
 const newsRoutes = require('./routes/news');
 const dialogueRoutes = require('./routes/dialogue');
+const configRoutes = require('./routes/config');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -54,6 +55,7 @@ app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 app.use('/api/rss', rssRoutes);
 app.use('/api/news', newsRoutes);
 app.use('/api/dialogue', dialogueRoutes);
+app.use('/api/config', configRoutes);
 
 // 健康检查
 app.get('/health', (req, res) => {
