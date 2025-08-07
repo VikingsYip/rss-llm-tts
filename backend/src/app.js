@@ -86,6 +86,54 @@ app.use((error, req, res, next) => {
   });
 });
 
+// 内存监控和自动重启机制
+function setupMemoryMonitoring() {
+  // 每5分钟检查一次内存使用情况
+  setInterval(() => {
+    const memUsage = process.memoryUsage();
+    const heapUsedMB = Math.round(memUsage.heapUsed / 1024 / 1024);
+    const heapTotalMB = Math.round(memUsage.heapTotal / 1024 / 1024);
+    const heapUsagePercent = (heapUsedMB / heapTotalMB) * 100;
+    
+    logger.info(`内存使用情况: ${heapUsedMB}MB / ${heapTotalMB}MB (${Math.round(heapUsagePercent)}%)`);
+    
+    // 如果堆内存使用率超过90%，记录警告
+    if (heapUsagePercent > 90) {
+      logger.warn(`内存使用率过高: ${Math.round(heapUsagePercent)}%，建议重启应用`);
+      
+      // 在开发环境下，如果内存使用率超过95%，自动重启
+      if (process.env.NODE_ENV === 'development' && heapUsagePercent > 95) {
+        logger.error('内存使用率过高，准备重启应用...');
+        setTimeout(() => {
+          process.exit(1); // 退出进程，让nodemon重启
+        }, 5000);
+      }
+    }
+  }, 5 * 60 * 1000); // 5分钟
+  
+  // 监听未捕获的异常
+  process.on('uncaughtException', (error) => {
+    logger.error('未捕获的异常:', error);
+    process.exit(1);
+  });
+  
+  // 监听未处理的Promise拒绝
+  process.on('unhandledRejection', (reason, promise) => {
+    logger.error('未处理的Promise拒绝:', reason);
+    process.exit(1);
+  });
+  
+  // 监听内存警告
+  process.on('warning', (warning) => {
+    if (warning.name === 'MaxListenersExceededWarning') {
+      logger.warn('事件监听器过多:', warning.message);
+    }
+  });
+}
+
+// 启动内存监控
+setupMemoryMonitoring();
+
 // 启动服务器
 async function startServer() {
   try {

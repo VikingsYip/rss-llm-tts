@@ -48,10 +48,12 @@ class RssService {
       const proxyConfig = await this.getProxyConfig();
       
       const axiosConfig = {
-        timeout: 15000,
+        timeout: 30000, // 增加超时时间到30秒
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
+        },
+        maxContentLength: 10 * 1024 * 1024, // 限制响应大小为10MB
+        maxBodyLength: 10 * 1024 * 1024
       };
 
       // 如果启用了代理，添加代理配置
@@ -60,10 +62,53 @@ class RssService {
         logger.info(`使用代理获取RSS: ${url}, 代理: ${proxyConfig.host}:${proxyConfig.port}`);
       }
 
-      const response = await axios.get(url, axiosConfig);
-      return response.data;
+      // 添加重试机制
+      let lastError;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          logger.debug(`RSS抓取尝试 ${attempt}/3: ${url}`);
+          const response = await axios.get(url, axiosConfig);
+          
+          // 检查响应状态
+          if (response.status === 503) {
+            throw new Error(`服务不可用 (503): ${url}`);
+          } else if (response.status >= 400) {
+            throw new Error(`HTTP错误 ${response.status}: ${url}`);
+          }
+          
+          return response.data;
+        } catch (error) {
+          lastError = error;
+          
+          if (error.response && error.response.status === 503) {
+            logger.warn(`RSS服务不可用 (503): ${url}, 尝试 ${attempt}/3`);
+            if (attempt < 3) {
+              await new Promise(resolve => setTimeout(resolve, 5000 * attempt)); // 递增延迟
+              continue;
+            }
+          } else if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+            logger.warn(`RSS请求超时: ${url}, 尝试 ${attempt}/3`);
+            if (attempt < 3) {
+              await new Promise(resolve => setTimeout(resolve, 3000 * attempt));
+              continue;
+            }
+          } else {
+            // 其他错误直接抛出
+            break;
+          }
+        }
+      }
+      
+      // 所有重试都失败了
+      logger.error(`RSS抓取失败 (已重试3次): ${url}`, lastError);
+      throw lastError;
     } catch (error) {
-      logger.error(`获取RSS内容失败: ${url}`, error);
+      logger.error(`获取RSS内容失败: ${url}`, {
+        message: error.message,
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        code: error.code
+      });
       throw error;
     }
   }
