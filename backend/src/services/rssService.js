@@ -26,15 +26,50 @@ class RssService {
       const httpProxyEnabled = await this.getConfigValue('http_proxy_enabled', false);
       const httpProxyUrl = await this.getConfigValue('http_proxy_url', '');
       
-      if (httpProxyEnabled && httpProxyUrl) {
-        return {
-          host: new URL(httpProxyUrl).hostname,
-          port: new URL(httpProxyUrl).port || 80,
-          protocol: new URL(httpProxyUrl).protocol.replace(':', '')
-        };
+      if (!httpProxyEnabled || !httpProxyUrl) {
+        logger.debug('代理未启用或未配置');
+        return null;
       }
+
+      // 解析代理URL，支持多种格式
+      let proxyUrl = httpProxyUrl.trim();
       
-      return null;
+      // 如果URL不包含协议，默认添加http://
+      if (!proxyUrl.includes('://')) {
+        proxyUrl = `http://${proxyUrl}`;
+        logger.debug(`代理URL缺少协议，自动添加http://: ${proxyUrl}`);
+      }
+
+      try {
+        const url = new URL(proxyUrl);
+        
+        const proxyConfig = {
+          host: url.hostname,
+          port: url.port || (url.protocol === 'https:' ? 443 : 80),
+          protocol: url.protocol.replace(':', '')
+        };
+
+        logger.info(`代理配置解析成功: ${proxyConfig.protocol}://${proxyConfig.host}:${proxyConfig.port}`);
+        return proxyConfig;
+      } catch (urlError) {
+        logger.error(`代理URL格式错误: ${httpProxyUrl}`, urlError);
+        
+        // 尝试手动解析IP:PORT格式
+        const match = httpProxyUrl.match(/^([^:]+):(\d+)$/);
+        if (match) {
+          const [, host, port] = match;
+          const proxyConfig = {
+            host: host,
+            port: parseInt(port),
+            protocol: 'http'
+          };
+          
+          logger.info(`手动解析代理配置成功: ${proxyConfig.protocol}://${proxyConfig.host}:${proxyConfig.port}`);
+          return proxyConfig;
+        }
+        
+        throw new Error(`无效的代理URL格式: ${httpProxyUrl}`);
+      }
     } catch (error) {
       logger.error('获取代理配置失败:', error);
       return null;

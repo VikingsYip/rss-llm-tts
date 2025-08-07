@@ -86,15 +86,13 @@ class ConfigService {
   // 设置配置
   async setConfig(key, value, description = null, type = 'string', isEncrypted = false) {
     try {
-      // 检查value是否为undefined或null
-      if (value === undefined || value === null) {
-        logger.warn(`配置值不能为空: ${key}`);
-        throw new Error(`配置值不能为空: ${key}`);
+      // 验证输入参数
+      if (!key) {
+        throw new Error('配置键不能为空');
       }
-      
-      let stringValue = value;
-      
+
       // 根据类型转换值为字符串
+      let stringValue;
       switch (type) {
         case 'number':
           stringValue = value.toString();
@@ -110,17 +108,10 @@ class ConfigService {
           break;
       }
       
-      const [config, created] = await Config.findOrCreate({
-        where: { key },
-        defaults: {
-          value: stringValue,
-          description,
-          type,
-          isEncrypted
-        }
-      });
+      // 手动检查配置是否存在，避免使用findOrCreate
+      let config = await Config.findOne({ where: { key } });
       
-      if (!created) {
+      if (config) {
         // 更新现有配置
         await config.update({
           value: stringValue,
@@ -128,9 +119,19 @@ class ConfigService {
           type,
           isEncrypted
         });
+        logger.info(`配置更新成功: ${key} = ${stringValue}`);
+      } else {
+        // 创建新配置
+        config = await Config.create({
+          key,
+          value: stringValue,
+          description,
+          type,
+          isEncrypted
+        });
+        logger.info(`配置创建成功: ${key} = ${stringValue}`);
       }
       
-      logger.info(`配置保存成功: ${key} = ${stringValue}`);
       return config;
     } catch (error) {
       logger.error(`保存配置失败: ${key}`, error);

@@ -26,10 +26,31 @@ const sequelize = new Sequelize(
       max: 3,            // 最大重试次数
       timeout: 10000     // 重试间隔
     },
-    // 增加事务设置
-    transactionType: 'IMMEDIATE',
-    isolationLevel: 'READ_COMMITTED'
+    // MySQL特定配置
+    dialectOptions: {
+      // 设置连接字符集
+      charset: 'utf8mb4',
+      // 设置时区
+      timezone: '+08:00',
+      // 设置连接超时
+      connectTimeout: 60000,
+      // 设置读取超时
+      acquireTimeout: 60000,
+      // 设置写入超时
+      timeout: 30000,
+      // 支持多语句查询
+      multipleStatements: true,
+      // 设置日期格式
+      dateStrings: true,
+      // 设置时区处理
+      typeCast: function (field, next) {
+        if (field.type === 'DATETIME') {
+          return field.string();
+        }
+        return next();
+      }
+    }
   }
 );
 
-module.exports = sequelize; 
+module.exports = sequelize;
