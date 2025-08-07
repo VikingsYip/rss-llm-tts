@@ -67,7 +67,7 @@ echo.
 
 :: 启动后端服务
 echo 启动后端服务 (端口: 3001)...
-start "RSS系统后端" cmd /k "cd backend && npm run dev"
+start "RSS系统后端" cmd /k "cd backend && npm run dev  --max-old-space-size=4096"
 
 :: 等待后端启动
 timeout /t 3 /nobreak >nul
