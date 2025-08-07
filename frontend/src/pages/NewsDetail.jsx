@@ -24,7 +24,7 @@ import {
   UserOutlined,
   TagOutlined
 } from '@ant-design/icons';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -33,6 +33,7 @@ const NewsDetail = () => {
   const [loading, setLoading] = useState(true);
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
 
   // 获取新闻详情
   const fetchNewsDetail = async () => {
@@ -89,6 +90,15 @@ const NewsDetail = () => {
     }
   };
 
+  // 返回新闻列表（保持URL参数）
+  const handleBackToList = () => {
+    // 从当前URL中提取查询参数
+    const searchParams = new URLSearchParams(location.search);
+    const queryString = searchParams.toString();
+    const backUrl = queryString ? `/news?${queryString}` : '/news';
+    navigate(backUrl);
+  };
+
   // 格式化时间
   const formatTime = (time) => {
     if (!time) return '未知时间';
@@ -122,7 +132,7 @@ const NewsDetail = () => {
       <div style={{ padding: '24px' }}>
         <Card>
           <Title level={2}>新闻不存在</Title>
-          <Button type="primary" onClick={() => navigate('/news')}>
+          <Button type="primary" onClick={handleBackToList}>
             返回新闻列表
           </Button>
         </Card>
@@ -135,7 +145,7 @@ const NewsDetail = () => {
       {/* 面包屑导航 */}
       <Breadcrumb style={{ marginBottom: 16 }}>
         <Breadcrumb.Item>
-          <a onClick={() => navigate('/news')}>新闻列表</a>
+          <a onClick={handleBackToList}>新闻列表</a>
         </Breadcrumb.Item>
         <Breadcrumb.Item>新闻详情</Breadcrumb.Item>
       </Breadcrumb>
@@ -145,7 +155,7 @@ const NewsDetail = () => {
         <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Button 
             icon={<ArrowLeftOutlined />} 
-            onClick={() => navigate('/news')}
+            onClick={handleBackToList}
           >
             返回列表
           </Button>

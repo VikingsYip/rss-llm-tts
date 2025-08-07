@@ -336,9 +336,17 @@ class RssService {
   }
 
   // 获取所有RSS源
-  async getAllFeeds(sortBy = 'createdAt', sortOrder = 'DESC') {
+  async getAllFeeds(sortBy = 'createdAt', sortOrder = 'DESC', category = null) {
     try {
+      const whereClause = {};
+      
+      // 添加分类筛选条件
+      if (category) {
+        whereClause.category = category;
+      }
+
       const feeds = await RssFeed.findAll({
+        where: whereClause,
         order: [['createdAt', 'DESC']]
       });
 
@@ -415,6 +423,65 @@ class RssService {
 
     await feed.update(updateData);
     return feed;
+  }
+
+  // 批量更新RSS源状态
+  async batchUpdateFeeds(ids, isActive) {
+    try {
+      const result = {
+        updated: 0,
+        failed: 0,
+        details: []
+      };
+
+      for (const id of ids) {
+        try {
+          const feed = await RssFeed.findByPk(id);
+          if (!feed) {
+            result.failed++;
+            result.details.push({
+              id,
+              error: 'RSS源不存在'
+            });
+            continue;
+          }
+
+          await feed.update({ isActive });
+          result.updated++;
+          result.details.push({
+            id,
+            name: feed.name,
+            success: true
+          });
+
+          logger.info(`RSS源状态更新成功: ${feed.name} -> ${isActive ? '启用' : '禁用'}`);
+        } catch (error) {
+          result.failed++;
+          result.details.push({
+            id,
+            error: error.message
+          });
+          logger.error(`更新RSS源状态失败: ${id}`, error);
+        }
+      }
+
+      logger.info(`批量更新RSS源状态完成: 成功 ${result.updated}, 失败 ${result.failed}`);
+      return result;
+    } catch (error) {
+      logger.error('批量更新RSS源状态失败:', error);
+      throw error;
+    }
+  }
+
+  // 根据ID获取RSS源
+  async getFeedById(feedId) {
+    try {
+      const feed = await RssFeed.findByPk(feedId);
+      return feed;
+    } catch (error) {
+      logger.error(`获取RSS源失败: ${feedId}`, error);
+      return null;
+    }
   }
 }
 

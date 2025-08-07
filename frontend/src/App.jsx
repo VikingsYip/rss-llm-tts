@@ -10,6 +10,7 @@ import RssFeeds from './pages/RssFeeds';
 import Dialogues from './pages/Dialogues';
 import DialogueDetail from './pages/DialogueDetail';
 import Settings from './pages/Settings';
+import CategoryStats from './pages/CategoryStats';
 import './App.css';
 
 const { Content } = Layout;
@@ -30,6 +31,7 @@ function App() {
               <Route path="/dialogues" element={<Dialogues />} />
               <Route path="/dialogues/:id" element={<DialogueDetail />} />
               <Route path="/settings" element={<Settings />} />
+              <Route path="/category-stats" element={<CategoryStats />} />
             </Routes>
           </Content>
         </Layout>

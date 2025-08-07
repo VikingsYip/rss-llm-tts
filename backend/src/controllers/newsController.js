@@ -187,16 +187,31 @@ class NewsController {
         }
       });
 
-      // 分类统计
-      const categoryStats = await News.findAll({
-        attributes: [
-          'category',
-          [sequelize.fn('COUNT', sequelize.col('id')), 'count']
-        ],
-        group: ['category'],
-        order: [[sequelize.fn('COUNT', sequelize.col('id')), 'DESC']],
-        limit: 5
-      });
+      // 按指定分类统计新闻
+      const predefinedCategories = [
+        '官媒新闻',
+        '科技媒体', 
+        '财经商业',
+        '国际媒体',
+        '自媒体博客',
+        '社区论坛',
+        '生活文化'
+      ];
+
+      const categoryStats = [];
+      for (const category of predefinedCategories) {
+        const count = await News.count({
+          where: { category: category }
+        });
+        categoryStats.push({
+          name: category,
+          count: count
+        });
+      }
+
+      // 按数量排序，取前5个
+      categoryStats.sort((a, b) => b.count - a.count);
+      const topCategories = categoryStats.slice(0, 5);
 
       // 来源统计
       const sourceStats = await News.findAll({
@@ -224,10 +239,7 @@ class NewsController {
             total: totalDialogues,
             today: todayDialogues
           },
-          categories: categoryStats.map(item => ({
-            name: item.category || '其他',
-            count: item.getDataValue('count')
-          })),
+          categories: topCategories,
           sources: sourceStats.map(item => ({
             name: item.sourceName || '未知',
             count: item.getDataValue('count')
@@ -239,6 +251,48 @@ class NewsController {
       res.status(500).json({
         success: false,
         message: '获取仪表板统计失败',
+        error: error.message
+      });
+    }
+  }
+
+  // 获取分类统计
+  async getCategoryStats(req, res) {
+    try {
+      // 按指定分类统计新闻
+      const predefinedCategories = [
+        '官媒新闻',
+        '科技媒体', 
+        '财经商业',
+        '国际媒体',
+        '自媒体博客',
+        '社区论坛',
+        '生活文化'
+      ];
+
+      const categoryStats = [];
+      for (const category of predefinedCategories) {
+        const count = await News.count({
+          where: { category: category }
+        });
+        categoryStats.push({
+          name: category,
+          count: count
+        });
+      }
+
+      // 按数量排序
+      categoryStats.sort((a, b) => b.count - a.count);
+
+      res.json({
+        success: true,
+        data: categoryStats
+      });
+    } catch (error) {
+      logger.error('获取分类统计失败:', error);
+      res.status(500).json({
+        success: false,
+        message: '获取分类统计失败',
         error: error.message
       });
     }

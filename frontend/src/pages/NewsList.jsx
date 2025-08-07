@@ -27,11 +27,40 @@ import {
   EyeInvisibleOutlined,
   ReloadOutlined
 } from '@ant-design/icons';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 const { Title, Text } = Typography;
 const { Search } = Input;
 const { Option } = Select;
+
+// Cookie工具函数
+const CookieUtils = {
+  // 设置cookie
+  setCookie: (name, value, days = 7) => {
+    const expires = new Date();
+    expires.setTime(expires.getTime() + (days * 24 * 60 * 60 * 1000));
+    document.cookie = `${name}=${encodeURIComponent(value)};expires=${expires.toUTCString()};path=/`;
+  },
+
+  // 获取cookie
+  getCookie: (name) => {
+    const nameEQ = name + "=";
+    const ca = document.cookie.split(';');
+    for (let i = 0; i < ca.length; i++) {
+      let c = ca[i];
+      while (c.charAt(0) === ' ') c = c.substring(1, c.length);
+      if (c.indexOf(nameEQ) === 0) {
+        return decodeURIComponent(c.substring(nameEQ.length, c.length));
+      }
+    }
+    return null;
+  },
+
+  // 删除cookie
+  deleteCookie: (name) => {
+    document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 UTC;path=/;`;
+  }
+};
 
 const NewsList = () => {
   const [news, setNews] = useState([]);
@@ -54,6 +83,105 @@ const NewsList = () => {
   const [sources, setSources] = useState([]);
   
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // 从URL参数解析状态
+  const parseUrlParams = () => {
+    try {
+      // 处理双重编码的问题
+      let searchString = location.search;
+      if (searchString.includes('%3F')) {
+        searchString = decodeURIComponent(searchString);
+      }
+      
+      const searchParams = new URLSearchParams(searchString);
+      const urlFilters = {
+        keyword: searchParams.get('keyword') || '',
+        category: searchParams.get('category') || '',
+        source: searchParams.get('source') || '',
+        isRead: searchParams.get('isRead') || '',
+        isFavorite: searchParams.get('isFavorite') || '',
+        isIgnored: searchParams.get('isIgnored') || ''
+      };
+      const page = parseInt(searchParams.get('page')) || 1;
+      return { filters: urlFilters, page };
+    } catch (error) {
+      console.error('解析URL参数失败:', error);
+      return { 
+        filters: {
+          keyword: '',
+          category: '',
+          source: '',
+          isRead: '',
+          isFavorite: '',
+          isIgnored: ''
+        }, 
+        page: 1 
+      };
+    }
+  };
+
+  // 从Cookie加载筛选状态
+  const loadFiltersFromCookie = () => {
+    try {
+      const savedFilters = CookieUtils.getCookie('newsListFilters');
+      if (savedFilters) {
+        const parsed = JSON.parse(savedFilters);
+        return {
+          keyword: parsed.keyword || '',
+          category: parsed.category || '',
+          source: parsed.source || '',
+          isRead: parsed.isRead || '',
+          isFavorite: parsed.isFavorite || '',
+          isIgnored: parsed.isIgnored || ''
+        };
+      }
+    } catch (error) {
+      console.error('解析Cookie中的筛选状态失败:', error);
+    }
+    return {
+      keyword: '',
+      category: '',
+      source: '',
+      isRead: '',
+      isFavorite: '',
+      isIgnored: ''
+    };
+  };
+
+  // 保存筛选状态到Cookie
+  const saveFiltersToCookie = (newFilters) => {
+    try {
+      // 只保存重要的筛选条件：关键词和分类
+      const importantFilters = {
+        keyword: newFilters.keyword,
+        category: newFilters.category
+      };
+      CookieUtils.setCookie('newsListFilters', JSON.stringify(importantFilters), 30); // 保存30天
+    } catch (error) {
+      console.error('保存筛选状态到Cookie失败:', error);
+    }
+  };
+
+  // 更新URL参数
+  const updateUrlParams = (newFilters, page = 1) => {
+    const searchParams = new URLSearchParams();
+    
+    // 添加非空的筛选参数
+    Object.entries(newFilters).forEach(([key, value]) => {
+      if (value !== '' && value !== null && value !== undefined) {
+        searchParams.set(key, value);
+      }
+    });
+    
+    // 添加页码
+    if (page > 1) {
+      searchParams.set('page', page.toString());
+    }
+    
+    const newUrl = `${location.pathname}${searchParams.toString() ? '?' + searchParams.toString() : ''}`;
+    navigate(newUrl, { replace: true });
+  };
 
   // 获取新闻列表
   const fetchNews = async (page = 1, filters = {}) => {
@@ -61,9 +189,17 @@ const NewsList = () => {
     try {
       const params = new URLSearchParams({
         page: page.toString(),
-        limit: pagination.pageSize.toString(),
-        ...filters
+        limit: pagination.pageSize.toString()
       });
+
+      // 添加筛选参数
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value !== '' && value !== null && value !== undefined) {
+          params.set(key, value);
+        }
+      });
+
+      console.log('发送API请求参数:', params.toString()); // 调试日志
 
       const response = await fetch(`/api/news?${params}`);
       const data = await response.json();
@@ -162,6 +298,8 @@ const NewsList = () => {
   const handleSearch = (value) => {
     const newFilters = { ...filters, keyword: value };
     setFilters(newFilters);
+    saveFiltersToCookie(newFilters); // 保存到Cookie
+    updateUrlParams(newFilters, 1);
     fetchNews(1, newFilters);
   };
 
@@ -169,11 +307,14 @@ const NewsList = () => {
   const handleFilterChange = (key, value) => {
     const newFilters = { ...filters, [key]: value };
     setFilters(newFilters);
+    saveFiltersToCookie(newFilters); // 保存到Cookie
+    updateUrlParams(newFilters, 1);
     fetchNews(1, newFilters);
   };
 
   // 处理分页
   const handlePageChange = (page) => {
+    updateUrlParams(filters, page);
     fetchNews(page, filters);
   };
 
@@ -188,15 +329,48 @@ const NewsList = () => {
       isIgnored: ''
     };
     setFilters(newFilters);
+    saveFiltersToCookie(newFilters); // 保存到Cookie
+    updateUrlParams(newFilters, 1);
     fetchNews(1, newFilters);
+  };
+
+  // 处理新闻点击
+  const handleNewsClick = (newsId) => {
+    navigate(`/news/${newsId}?${location.search}`);
   };
 
   // 组件加载时获取数据
   useEffect(() => {
-    fetchNews();
+    // 优先从URL参数恢复状态，如果没有则从Cookie加载
+    const { filters: urlFilters, page } = parseUrlParams();
+    const cookieFilters = loadFiltersFromCookie();
+    
+    // 合并URL参数和Cookie中的状态，URL参数优先级更高
+    const mergedFilters = {
+      ...cookieFilters,
+      ...urlFilters
+    };
+    
+    console.log('恢复的筛选状态:', mergedFilters); // 调试日志
+    setFilters(mergedFilters);
+    
+    // 如果URL中没有筛选参数，但有Cookie中的状态，则更新URL
+    if (!location.search && (cookieFilters.keyword || cookieFilters.category)) {
+      updateUrlParams(mergedFilters, page);
+    }
+    
+    fetchNews(page, mergedFilters);
     fetchStats();
     fetchFilters();
   }, []);
+
+  // 监听URL变化
+  useEffect(() => {
+    const { filters: urlFilters, page } = parseUrlParams();
+    console.log('URL变化，新的筛选状态:', urlFilters); // 调试日志
+    setFilters(urlFilters);
+    fetchNews(page, urlFilters);
+  }, [location.search]);
 
   // 格式化时间
   const formatTime = (time) => {
@@ -351,28 +525,44 @@ const NewsList = () => {
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                       <div style={{ flex: 1 }}>
-                        <div style={{ marginBottom: 8 }}>
-                          <Space>
-                            <Text 
-                              strong 
-                              style={{ 
-                                fontSize: '16px',
-                                color: item.isRead ? '#666' : '#000',
-                                cursor: 'pointer'
-                              }}
-                              onClick={() => navigate(`/news/${item.id}`)}
-                            >
-                              {item.title}
+                        {/* 可点击区域：标题和摘要 */}
+                        <div 
+                          style={{ 
+                            cursor: 'pointer',
+                            padding: '8px',
+                            margin: '-8px',
+                            borderRadius: '4px',
+                            transition: 'background-color 0.2s'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = '#f5f5f5';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = 'transparent';
+                          }}
+                          onClick={() => handleNewsClick(item.id)}
+                        >
+                          <div style={{ marginBottom: 8 }}>
+                            <Space>
+                              <Text 
+                                strong 
+                                style={{ 
+                                  fontSize: '16px',
+                                  color: item.isRead ? '#666' : '#000'
+                                }}
+                              >
+                                {item.title}
+                              </Text>
+                              {item.isFavorite && <HeartFilled style={{ color: '#ff4d4f' }} />}
+                              {item.isIgnored && <EyeInvisibleOutlined style={{ color: '#999' }} />}
+                            </Space>
+                          </div>
+                          
+                          <div style={{ marginBottom: 8 }}>
+                            <Text type="secondary">
+                              {truncateSummary(item.summary)}
                             </Text>
-                            {item.isFavorite && <HeartFilled style={{ color: '#ff4d4f' }} />}
-                            {item.isIgnored && <EyeInvisibleOutlined style={{ color: '#999' }} />}
-                          </Space>
-                        </div>
-                        
-                        <div style={{ marginBottom: 8 }}>
-                          <Text type="secondary">
-                            {truncateSummary(item.summary)}
-                          </Text>
+                          </div>
                         </div>
                         
                         <div style={{ marginBottom: 8 }}>
@@ -394,7 +584,10 @@ const NewsList = () => {
                                 type="text"
                                 size="small"
                                 icon={item.isRead ? <EyeOutlined /> : <EyeInvisibleOutlined />}
-                                onClick={() => updateNewsStatus(item.id, 'isRead', !item.isRead)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  updateNewsStatus(item.id, 'isRead', !item.isRead);
+                                }}
                               />
                             </Tooltip>
                             
@@ -403,7 +596,10 @@ const NewsList = () => {
                                 type="text"
                                 size="small"
                                 icon={item.isFavorite ? <HeartFilled style={{ color: '#ff4d4f' }} /> : <HeartOutlined />}
-                                onClick={() => updateNewsStatus(item.id, 'isFavorite', !item.isFavorite)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  updateNewsStatus(item.id, 'isFavorite', !item.isFavorite);
+                                }}
                               />
                             </Tooltip>
                             
@@ -412,7 +608,10 @@ const NewsList = () => {
                                 type="text"
                                 size="small"
                                 icon={item.isIgnored ? <StarFilled style={{ color: '#faad14' }} /> : <StarOutlined />}
-                                onClick={() => updateNewsStatus(item.id, 'isIgnored', !item.isIgnored)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  updateNewsStatus(item.id, 'isIgnored', !item.isIgnored);
+                                }}
                               />
                             </Tooltip>
                           </Space>

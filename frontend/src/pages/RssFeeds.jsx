@@ -14,7 +14,8 @@ import {
   Popconfirm,
   Tooltip,
   Divider,
-  Alert
+  Alert,
+  Select
 } from 'antd';
 import { 
   PlusOutlined, 
@@ -23,7 +24,8 @@ import {
   UploadOutlined, 
   SyncOutlined,
   FileTextOutlined,
-  DownloadOutlined
+  DownloadOutlined,
+  FilterOutlined
 } from '@ant-design/icons';
 
 const { Title, Text } = Typography;
@@ -40,11 +42,25 @@ const RssFeeds = () => {
     sortBy: 'createdAt',
     sortOrder: 'DESC'
   });
+  const [selectedCategory, setSelectedCategory] = useState('');
+  const [selectedRowKeys, setSelectedRowKeys] = useState([]);
+  const [batchLoading, setBatchLoading] = useState(false);
 
-  const categories = ['科技', 'AI', '互联网', '创业', '开发', '其他'];
+  // 预设分类列表
+  const categoryList = [
+    { key: '官媒新闻', label: '官媒新闻', color: 'red' },
+    { key: '科技媒体', label: '科技媒体', color: 'blue' },
+    { key: '财经商业', label: '财经商业', color: 'green' },
+    { key: '国际媒体', label: '国际媒体', color: 'purple' },
+    { key: '自媒体博客', label: '自媒体博客', color: 'orange' },
+    { key: '社区论坛', label: '社区论坛', color: 'cyan' },
+    { key: '生活文化', label: '生活文化', color: 'pink' }
+  ];
+
+  const categories = ['官媒新闻', '科技媒体', '财经商业', '国际媒体', '自媒体博客', '社区论坛', '生活文化', '其他'];
 
   // 获取RSS源列表
-  const fetchFeeds = async (sortBy = sortConfig.sortBy, sortOrder = sortConfig.sortOrder) => {
+  const fetchFeeds = async (sortBy = sortConfig.sortBy, sortOrder = sortConfig.sortOrder, category = selectedCategory) => {
     setLoading(true);
     try {
       const params = new URLSearchParams({
@@ -52,11 +68,17 @@ const RssFeeds = () => {
         sortOrder: sortOrder
       });
 
+      // 添加分类筛选参数
+      if (category) {
+        params.append('category', category);
+      }
+
       const response = await fetch(`/api/rss/feeds?${params}`);
       const data = await response.json();
       if (data.success) {
         setFeeds(data.data);
         setSortConfig({ sortBy, sortOrder });
+        setSelectedCategory(category);
       } else {
         message.error('获取RSS源列表失败');
       }
@@ -73,11 +95,107 @@ const RssFeeds = () => {
     fetchFeeds();
   }, []);
 
+  // 处理分类筛选
+  const handleCategoryFilter = (category) => {
+    if (selectedCategory === category) {
+      // 如果点击的是当前选中的分类，则取消筛选
+      setSelectedCategory('');
+      fetchFeeds(sortConfig.sortBy, sortConfig.sortOrder, '');
+    } else {
+      // 否则应用新的分类筛选
+      setSelectedCategory(category);
+      fetchFeeds(sortConfig.sortBy, sortConfig.sortOrder, category);
+    }
+  };
+
   // 处理排序
   const handleSort = (sortBy) => {
     const currentSortOrder = sortConfig.sortBy === sortBy ? sortConfig.sortOrder : 'DESC';
     const newSortOrder = currentSortOrder === 'DESC' ? 'ASC' : 'DESC';
-    fetchFeeds(sortBy, newSortOrder);
+    fetchFeeds(sortBy, newSortOrder, selectedCategory);
+  };
+
+  // 批量启用RSS源
+  const handleBatchEnable = async () => {
+    if (selectedRowKeys.length === 0) {
+      message.warning('请选择要启用的RSS源');
+      return;
+    }
+
+    setBatchLoading(true);
+    try {
+      const response = await fetch('/api/rss/feeds/batch-update', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ids: selectedRowKeys,
+          isActive: true
+        }),
+      });
+
+      const result = await response.json();
+      if (result.success) {
+        message.success(`成功启用 ${result.data.updated} 个RSS源`);
+        setSelectedRowKeys([]);
+        fetchFeeds(); // 刷新列表
+      } else {
+        message.error(`批量启用失败: ${result.message}`);
+      }
+    } catch (error) {
+      console.error('批量启用失败:', error);
+      message.error('批量启用失败');
+    } finally {
+      setBatchLoading(false);
+    }
+  };
+
+  // 批量禁用RSS源
+  const handleBatchDisable = async () => {
+    if (selectedRowKeys.length === 0) {
+      message.warning('请选择要禁用的RSS源');
+      return;
+    }
+
+    Modal.confirm({
+      title: '确认批量禁用',
+      content: `确定要禁用选中的 ${selectedRowKeys.length} 个RSS源吗？禁用后将停止自动抓取，但仍可手动抓取。`,
+      onOk: async () => {
+        setBatchLoading(true);
+        try {
+          const response = await fetch('/api/rss/feeds/batch-update', {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              ids: selectedRowKeys,
+              isActive: false
+            }),
+          });
+
+          const result = await response.json();
+          if (result.success) {
+            message.success(`成功禁用 ${result.data.updated} 个RSS源`);
+            setSelectedRowKeys([]);
+            fetchFeeds(); // 刷新列表
+          } else {
+            message.error(`批量禁用失败: ${result.message}`);
+          }
+        } catch (error) {
+          console.error('批量禁用失败:', error);
+          message.error('批量禁用失败');
+        } finally {
+          setBatchLoading(false);
+        }
+      }
+    });
+  };
+
+  // 处理表格选择变化
+  const handleTableSelectChange = (newSelectedRowKeys) => {
+    setSelectedRowKeys(newSelectedRowKeys);
   };
 
   // 处理OPML文件上传
@@ -364,7 +482,15 @@ const RssFeeds = () => {
       dataIndex: 'category',
       key: 'category',
       width: 100,
-      render: (category) => <Tag color="blue">{category}</Tag>,
+      render: (category) => (
+        <Tag
+          color={categoryList.find(item => item.key === category)?.color || 'default'}
+          onClick={() => handleCategoryFilter(category)}
+          style={{ cursor: 'pointer' }}
+        >
+          {category}
+        </Tag>
+      ),
     },
     {
       title: '状态',
@@ -499,6 +625,80 @@ const RssFeeds = () => {
       </Card>
 
       <Card>
+        <div style={{ marginBottom: 16 }}>
+          <Space wrap>
+            <Text strong>分类筛选：</Text>
+            <Button
+              type={selectedCategory ? 'default' : 'primary'}
+              size="small"
+              onClick={() => handleCategoryFilter('')}
+            >
+              全部
+            </Button>
+            {categoryList.map(item => (
+              <Button
+                key={item.key}
+                type={selectedCategory === item.key ? 'primary' : 'default'}
+                size="small"
+                onClick={() => handleCategoryFilter(item.key)}
+              >
+                <Tag color={item.color} style={{ margin: 0, border: 'none' }}>
+                  {item.label}
+                </Tag>
+              </Button>
+            ))}
+          </Space>
+          {selectedCategory && (
+            <div style={{ marginTop: 8 }}>
+              <Text type="secondary">
+                当前筛选：<Tag color="blue">{selectedCategory}</Tag>
+                <Button 
+                  type="link" 
+                  size="small" 
+                  onClick={() => handleCategoryFilter('')}
+                  style={{ padding: 0, marginLeft: 8 }}
+                >
+                  清除筛选
+                </Button>
+              </Text>
+            </div>
+          )}
+        </div>
+
+        {/* 批量操作按钮 */}
+        {selectedRowKeys.length > 0 && (
+          <div style={{ marginBottom: 16, padding: '12px', backgroundColor: '#f0f8ff', borderRadius: '6px' }}>
+            <Space>
+              <Text strong>已选择 {selectedRowKeys.length} 个RSS源：</Text>
+              <Button 
+                type="primary" 
+                size="small"
+                icon={<SyncOutlined />} 
+                onClick={handleBatchEnable} 
+                loading={batchLoading}
+              >
+                批量启用
+              </Button>
+              <Button 
+                type="default" 
+                size="small"
+                icon={<DeleteOutlined />} 
+                onClick={handleBatchDisable} 
+                loading={batchLoading}
+              >
+                批量禁用
+              </Button>
+              <Button 
+                type="link" 
+                size="small"
+                onClick={() => setSelectedRowKeys([])}
+              >
+                取消选择
+              </Button>
+            </Space>
+          </div>
+        )}
+
         <Table
           columns={columns}
           dataSource={feeds}
@@ -511,11 +711,15 @@ const RssFeeds = () => {
             showTotal: (total) => `共 ${total} 个RSS源`,
           }}
           scroll={{ x: 1200 }}
+          rowSelection={{
+            selectedRowKeys,
+            onChange: handleTableSelectChange,
+          }}
           onChange={(pagination, filters, sorter) => {
             // 处理Ant Design Table的排序事件
             if (sorter && sorter.field) {
               const sortOrder = sorter.order === 'ascend' ? 'ASC' : 'DESC';
-              fetchFeeds(sorter.field, sortOrder);
+              fetchFeeds(sorter.field, sortOrder, selectedCategory);
             }
           }}
         />
@@ -533,7 +737,7 @@ const RssFeeds = () => {
           layout="vertical"
           onFinish={handleSaveFeed}
           initialValues={{
-            category: '科技',
+            category: '科技媒体',
             fetchInterval: 3600000,
           }}
         >
@@ -561,7 +765,13 @@ const RssFeeds = () => {
             label="分类"
             rules={[{ required: true, message: '请选择分类' }]}
           >
-            <Input placeholder="请选择分类" />
+            <Select placeholder="请选择分类">
+              {categories.map(category => (
+                <Select.Option key={category} value={category}>
+                  {category}
+                </Select.Option>
+              ))}
+            </Select>
           </Form.Item>
 
           <Form.Item

@@ -17,4 +17,7 @@ router.get('/stats/overview', newsController.getNewsStats);
 // 仪表板统计
 router.get('/stats/dashboard', newsController.getDashboardStats);
 
+// 分类统计
+router.get('/stats/categories', newsController.getCategoryStats);
+
 module.exports = router; 

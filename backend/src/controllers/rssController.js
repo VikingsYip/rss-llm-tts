@@ -6,8 +6,8 @@ class RSSController {
   // 获取所有RSS源
   async getAllFeeds(req, res) {
     try {
-      const { sortBy, sortOrder } = req.query;
-      const feeds = await rssService.getAllFeeds(sortBy, sortOrder);
+      const { sortBy, sortOrder, category } = req.query;
+      const feeds = await rssService.getAllFeeds(sortBy, sortOrder, category);
       res.json({
         success: true,
         data: feeds
@@ -113,8 +113,19 @@ class RSSController {
 
       const feed = await rssService.updateFeed(id, updateData);
 
-      // 重新安排定时任务
-      await rssFetchJob.scheduleFeedFetch(feed);
+      // 如果更新了isActive状态，重新安排定时任务
+      if (updateData.hasOwnProperty('isActive')) {
+        if (updateData.isActive) {
+          // 启用RSS源，启动定时任务
+          await rssFetchJob.scheduleFeedFetch(feed);
+        } else {
+          // 禁用RSS源，停止定时任务
+          rssFetchJob.stopFeedFetch(id);
+        }
+      } else {
+        // 其他字段更新，重新安排定时任务
+        await rssFetchJob.scheduleFeedFetch(feed);
+      }
 
       res.json({
         success: true,
@@ -264,6 +275,62 @@ class RSSController {
       res.status(500).json({
         success: false,
         message: '清理过期新闻失败',
+        error: error.message
+      });
+    }
+  }
+
+  // 批量更新RSS源状态
+  async batchUpdateFeeds(req, res) {
+    try {
+      const { ids, isActive } = req.body;
+      
+      if (!ids || !Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: '请提供有效的RSS源ID列表'
+        });
+      }
+
+      if (typeof isActive !== 'boolean') {
+        return res.status(400).json({
+          success: false,
+          message: '请提供有效的状态值'
+        });
+      }
+
+      const result = await rssService.batchUpdateFeeds(ids, isActive);
+
+      // 批量处理定时任务
+      for (const detail of result.details) {
+        if (detail.success) {
+          if (isActive) {
+            // 启用RSS源，启动定时任务
+            const feed = await rssService.getFeedById(detail.id);
+            if (feed) {
+              await rssFetchJob.scheduleFeedFetch(feed);
+            }
+          } else {
+            // 禁用RSS源，停止定时任务
+            rssFetchJob.stopFeedFetch(detail.id);
+          }
+        }
+      }
+
+      res.json({
+        success: true,
+        message: `批量${isActive ? '启用' : '禁用'}完成`,
+        data: {
+          updated: result.updated,
+          failed: result.failed,
+          total: ids.length
+        }
+      });
+    } catch (error) {
+      logger.error('批量更新RSS源状态失败:', error);
+      res.status(500).json({
+        success: false,
+        message: '批量更新RSS源状态失败',
         error: error.message
       });
     }

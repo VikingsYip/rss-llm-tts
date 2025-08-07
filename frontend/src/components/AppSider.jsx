@@ -7,6 +7,7 @@ import {
   LinkOutlined,
   MessageOutlined,
   SettingOutlined,
+  BarChartOutlined,
 } from '@ant-design/icons';
 
 const { Sider } = Layout;
@@ -30,6 +31,11 @@ const AppSider = () => {
       key: '/feeds',
       icon: <LinkOutlined />,
       label: 'RSS源管理',
+    },
+    {
+      key: '/category-stats',
+      icon: <BarChartOutlined />,
+      label: '分类统计',
     },
     {
       key: '/dialogues',

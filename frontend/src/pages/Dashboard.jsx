@@ -151,18 +151,33 @@ const Dashboard = () => {
           <Card title="新闻分类统计" extra={<Tag color="blue">TOP 5</Tag>}>
             <List
               dataSource={stats.categories}
-              renderItem={(item, index) => (
-                <List.Item>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
-                    <div>
-                      <Text strong>{index + 1}. {item.name}</Text>
+              renderItem={(item, index) => {
+                // 为不同分类设置不同颜色
+                const categoryColors = {
+                  '官媒新闻': 'red',
+                  '科技媒体': 'blue',
+                  '财经商业': 'green',
+                  '国际媒体': 'purple',
+                  '自媒体博客': 'orange',
+                  '社区论坛': 'cyan',
+                  '生活文化': 'pink'
+                };
+                
+                const color = categoryColors[item.name] || 'default';
+                
+                return (
+                  <List.Item>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
+                      <div>
+                        <Text strong>{index + 1}. {item.name}</Text>
+                      </div>
+                      <div>
+                        <Tag color={color}>{item.count} 篇</Tag>
+                      </div>
                     </div>
-                    <div>
-                      <Tag color="blue">{item.count} 篇</Tag>
-                    </div>
-                  </div>
-                </List.Item>
-              )}
+                  </List.Item>
+                );
+              }}
               locale={{
                 emptyText: '暂无分类数据'
               }}

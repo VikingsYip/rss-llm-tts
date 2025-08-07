@@ -8,6 +8,9 @@ router.post('/feeds', rssController.addFeed);
 router.put('/feeds/:id', rssController.updateFeed);
 router.delete('/feeds/:id', rssController.deleteFeed);
 
+// 批量操作
+router.put('/feeds/batch-update', rssController.batchUpdateFeeds);
+
 // OPML批量导入
 router.post('/feeds/import-opml', rssController.importOpml);
 

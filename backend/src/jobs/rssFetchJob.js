@@ -48,6 +48,12 @@ class RSSFetchJob {
       // 停止已存在的任务
       this.stopFeedFetch(feed.id);
 
+      // 如果RSS源被禁用，不安排定时任务
+      if (!feed.isActive) {
+        logger.info(`RSS源已禁用，不安排定时任务: ${feed.name}`);
+        return;
+      }
+
       // 计算执行间隔（分钟）
       const intervalMinutes = Math.max(1, Math.floor(feed.fetchInterval / 60000));
       
