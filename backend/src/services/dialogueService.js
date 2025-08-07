@@ -793,6 +793,13 @@ ${newsDetails}
       rounds: dialogueRounds
     };
   }
+
+  // 估算音频时长（秒）
+  estimateDuration(text) {
+    const charactersPerMinute = 200;
+    const durationMinutes = text.length / charactersPerMinute;
+    return Math.ceil(durationMinutes * 60);
+  }
 }
 
 module.exports = new DialogueService(); 

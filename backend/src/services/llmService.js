@@ -287,15 +287,20 @@ ${character1}: [对话内容]
 
       return {
         success: true,
-        message: 'LLM连接测试成功',
-        response: response.data.choices[0].message.content
+        data: {
+          responseTime: 1000, // 模拟响应时间
+          message: 'LLM连接测试成功',
+          response: response.data.choices[0].message.content
+        }
       };
     } catch (error) {
       logger.error('LLM连接测试失败:', error);
       return {
         success: false,
         message: 'LLM连接测试失败',
-        error: error.message
+        data: {
+          error: error.message
+        }
       };
     }
   }

@@ -198,7 +198,9 @@ class ConfigService {
       return {
         success: false,
         message: 'LLM连接测试失败',
-        error: error.message
+        data: {
+          error: error.message
+        }
       };
     }
   }
@@ -227,7 +229,9 @@ class ConfigService {
       return {
         success: false,
         message: 'TTS连接测试失败',
-        error: error.message
+        data: {
+          error: error.message
+        }
       };
     }
   }
