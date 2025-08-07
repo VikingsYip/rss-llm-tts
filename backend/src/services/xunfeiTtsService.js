@@ -131,178 +131,92 @@ class XunfeiTtsService {
           }
         }, 60000);
 
-        // 心跳检测
-        const heartbeatInterval = setInterval(() => {
-          if (isConnected && ws.readyState === WebSocket.OPEN) {
-            try {
-              ws.ping();
-              logger.debug('发送心跳包');
-            } catch (error) {
-              logger.warn('心跳包发送失败:', error.message);
-            }
-          }
-        }, 10000);
-
         ws.on('open', () => {
+          logger.info('WebSocket连接已建立');
           isConnected = true;
           clearTimeout(connectionTimeout);
-          logger.info('WebSocket连接成功，开始发送TTS请求');
           
-          // 构建请求消息
-          const message = {
-            header: {
-              app_id: appId,
+          // 发送TTS请求
+          const requestData = {
+            common: {
+              app_id: appId
+            },
+            business: {
+              aue: 'raw',
+              sfl: 1,
+              auf: 'audio/L16;rate=16000',
+              vcn: voice,
+              speed: 50,
+              volume: 50,
+              pitch: 50,
+              bgs: 0,
+              tte: 'UTF8'
+            },
+            data: {
               status: 2,
-            },
-            parameter: {
-              oral: {
-                oral_level: "mid"
-              },
-              tts: {
-                vcn: voice,
-                speed: 50,
-                volume: 50,
-                pitch: 50,
-                bgs: 0,
-                reg: 0,
-                rdn: 0,
-                rhy: 0,
-                audio: {
-                  encoding: "lame",
-                  sample_rate: 24000,
-                  channels: 1,
-                  bit_depth: 16,
-                  frame_size: 0
-                }
-              }
-            },
-            payload: {
-              text: {
-                encoding: "utf8",
-                compress: "raw",
-                format: "plain",
-                status: 2,
-                seq: 0,
-                text: Buffer.from(text).toString('base64')
-              }
+              text: Buffer.from(text).toString('base64')
             }
           };
           
-          try {
-            ws.send(JSON.stringify(message));
-            logger.info('TTS请求消息发送成功');
-          } catch (error) {
-            logger.error('发送TTS请求失败:', error);
-            ws.close();
-            reject(new Error(`发送TTS请求失败: ${error.message}`));
-          }
+          ws.send(JSON.stringify(requestData));
         });
 
         ws.on('message', (data) => {
+          hasReceivedData = true;
+          clearTimeout(dataTimeout);
+          
           try {
-            hasReceivedData = true;
-            clearTimeout(dataTimeout);
+            const response = JSON.parse(data);
             
-            const response = JSON.parse(data.toString());
-            logger.debug('收到TTS响应:', JSON.stringify(response, null, 2));
-            
-            // 检查错误
-            if (response.header && response.header.code !== 0) {
-              const errorMsg = `TTS API错误: code=${response.header.code}, message=${response.header.message}`;
-              logger.error(errorMsg);
+            if (response.code !== 0) {
+              logger.error('科大讯飞TTS错误:', response.message);
               ws.close();
-              reject(new Error(errorMsg));
+              reject(new Error(`科大讯飞TTS错误: ${response.message}`));
               return;
             }
             
-            // 处理音频数据
-            if (response.payload && response.payload.audio && response.payload.audio.audio) {
-              const audioData = Buffer.from(response.payload.audio.audio, 'base64');
+            if (response.data && response.data.audio) {
+              // 解码音频数据
+              const audioData = Buffer.from(response.data.audio, 'base64');
               audioChunks.push(audioData);
-              //logger.debug(`接收音频片段，大小: ${audioData.length} bytes`);
-            } else {
-              logger.debug('响应中没有音频数据，响应内容:', {
-                hasPayload: !!response.payload,
-                hasAudio: !!(response.payload && response.payload.audio),
-                hasAudioData: !!(response.payload && response.payload.audio && response.payload.audio.audio),
-                header: response.header,
-                payloadKeys: response.payload ? Object.keys(response.payload) : []
-              });
             }
             
-            // 检查是否完成
-            if (response.header && response.header.status === 2) {
-              logger.info('TTS音频接收完成，开始保存文件');
-              
-              if (audioChunks.length === 0) {
-                logger.warn('没有接收到音频数据，但服务器报告完成');
-                const testAudio = Buffer.from([0x49, 0x44, 0x33, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
-                audioChunks.push(testAudio);
-              }
-              
-              const totalAudio = Buffer.concat(audioChunks);
-              
-              const outputDir = path.dirname(outputPath);
-              if (!fs.existsSync(outputDir)) {
-                fs.mkdirSync(outputDir, { recursive: true });
-              }
-              
-              fs.writeFileSync(outputPath, totalAudio);
-              
-              logger.info(`TTS音频生成成功: ${outputPath}, 大小: ${totalAudio.length} bytes`);
-              
-              clearInterval(heartbeatInterval);
+            if (response.data && response.data.status === 2) {
+              // 音频生成完成
+              logger.info('科大讯飞TTS音频生成完成');
               ws.close();
+              
+              // 合并所有音频数据
+              const finalAudio = Buffer.concat(audioChunks);
+              
+              // 保存音频文件
+              fs.writeFileSync(outputPath, finalAudio);
+              
               resolve({
                 success: true,
                 audioPath: outputPath,
-                audioSize: totalAudio.length,
+                audioSize: finalAudio.length,
                 duration: this.estimateDuration(text)
               });
             }
           } catch (error) {
-            logger.error('处理TTS响应失败:', error);
+            logger.error('解析WebSocket消息失败:', error);
             ws.close();
             reject(error);
           }
         });
 
         ws.on('error', (error) => {
-          logger.error('WebSocket错误:', error);
-          clearInterval(heartbeatInterval);
+          logger.error('WebSocket连接错误:', error);
           clearTimeout(connectionTimeout);
           clearTimeout(dataTimeout);
-          reject(new Error(`WebSocket连接错误: ${error.message}`));
+          reject(error);
         });
 
         ws.on('close', (code, reason) => {
-          logger.info(`WebSocket连接关闭: code=${code}, reason=${reason}`);
-          clearInterval(heartbeatInterval);
+          logger.info(`WebSocket连接已关闭: ${code} - ${reason}`);
           clearTimeout(connectionTimeout);
           clearTimeout(dataTimeout);
-          
-          if (code === 1000) {
-            if (audioChunks.length > 0) {
-              logger.info('WebSocket正常关闭，音频数据接收完成');
-            } else {
-              reject(new Error('WebSocket正常关闭，但未接收到音频数据'));
-            }
-          } else if (code === 1006) {
-            reject(new Error(`WebSocket异常关闭: ${reason || '连接意外断开'}`));
-          } else {
-            if (audioChunks.length === 0) {
-              reject(new Error(`WebSocket连接关闭 (code=${code}): ${reason || '未接收到音频数据'}`));
-            }
-          }
-        });
-
-        ws.on('ping', () => {
-          logger.debug('收到ping，发送pong');
-          ws.pong();
-        });
-
-        ws.on('pong', () => {
-          logger.debug('收到pong');
         });
 
       } catch (error) {
@@ -310,6 +224,67 @@ class XunfeiTtsService {
         reject(error);
       }
     });
+  }
+
+  // 生成多发音人TTS音频（用于对话）
+  async generateMultiVoiceTTS(config, dialogueContent, outputPath) {
+    try {
+      logger.info('开始科大讯飞多发音人TTS音频生成');
+      
+      // 获取配置的主持人和嘉宾发音人
+      const configService = require('./configService');
+      const configs = await configService.getAllConfigs();
+      const hostVoice = configs.tts_voice_host || 'x5_lingfeiyi_flow';
+      const guestVoice = configs.tts_voice_guest || 'xiaoyan';
+
+      let allAudioData = Buffer.alloc(0);
+      
+      // 为每个对话轮次生成音频
+      for (const round of dialogueContent.rounds) {
+        // 根据说话者选择发音人
+        let voice = hostVoice; // 默认使用主持人发音人
+        if (round.speaker.includes('嘉宾') || round.speaker.includes('专家') || round.speaker.includes('CEO')) {
+          voice = guestVoice;
+        }
+        
+        logger.info(`为 ${round.speaker} 生成音频，使用发音人: ${voice}`);
+
+        // 创建临时文件路径
+        const tempPath = `${outputPath}_temp_${Date.now()}.pcm`;
+        
+        // 生成单个音频
+        const result = await this.generateTTS({
+          ...config,
+          voice: voice
+        }, `${round.speaker}：${round.text}`, tempPath);
+        
+        // 读取音频数据
+        const audioData = fs.readFileSync(tempPath);
+        allAudioData = Buffer.concat([allAudioData, audioData]);
+        
+        // 添加短暂停顿（静音）
+        const silence = Buffer.alloc(32000); // 2秒静音（16kHz采样率）
+        allAudioData = Buffer.concat([allAudioData, silence]);
+        
+        // 删除临时文件
+        fs.unlinkSync(tempPath);
+      }
+
+      // 保存完整音频文件
+      fs.writeFileSync(outputPath, allAudioData);
+      
+      logger.info(`科大讯飞多发音人音频生成完成: ${outputPath}`);
+      return {
+        success: true,
+        audioPath: outputPath,
+        audioSize: allAudioData.length,
+        duration: this.estimateDuration(dialogueContent.rounds.map(r => r.text).join(''))
+      };
+
+    } catch (error) {
+      logger.error('科大讯飞多发音人TTS生成失败:', error);
+      throw error;
+    }
   }
 
   // 估算音频时长（秒）

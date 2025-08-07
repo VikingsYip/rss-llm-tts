@@ -74,6 +74,20 @@ const initializeDefaultConfigs = async () => {
       isEncrypted: false
     },
     {
+      key: 'tts_voice_host',
+      value: 'alloy',
+      description: 'TTS发音人（主持人）',
+      type: 'string',
+      isEncrypted: false
+    },
+    {
+      key: 'tts_voice_guest',
+      value: 'nova',
+      description: 'TTS发音人（嘉宾）',
+      type: 'string',
+      isEncrypted: false
+    },
+    {
       key: 'rss_fetch_interval',
       value: '3600000',
       description: 'RSS抓取间隔(毫秒)',

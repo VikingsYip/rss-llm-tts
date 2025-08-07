@@ -50,6 +50,8 @@ const Settings = () => {
           ttsApiKey: data.data.tts_api_key || '',
           ttsApiSecret: data.data.tts_api_secret || '',
           ttsVoice: data.data.tts_voice || 'x5_lingfeiyi_flow',
+          ttsVoiceHost: data.data.tts_voice_host || 'alloy',
+          ttsVoiceGuest: data.data.tts_voice_guest || 'nova',
           rssFetchInterval: data.data.rss_fetch_interval || 3600000,
           newsRetentionHours: data.data.news_retention_hours || 24,
           dialogueNewsCount: data.data.dialogue_news_count || 5,
@@ -288,6 +290,22 @@ const Settings = () => {
             extra="常用发音人: x5_lingfeiyi_flow, xiaoyan, aisxping, asdf_viola 等"
           >
             <Input placeholder="x5_lingfeiyi_flow" />
+          </Form.Item>
+          <Form.Item
+            name="ttsVoiceHost"
+            label="TTS发音人（主持人）"
+            rules={[{ required: true, message: '请输入主持人发音人' }]}
+            extra="主持人音色，建议选择男声：alloy, echo, fable, onyx 等"
+          >
+            <Input placeholder="alloy" />
+          </Form.Item>
+          <Form.Item
+            name="ttsVoiceGuest"
+            label="TTS发音人（嘉宾）"
+            rules={[{ required: true, message: '请输入嘉宾发音人' }]}
+            extra="嘉宾音色，建议选择女声：nova, shimmer 等"
+          >
+            <Input placeholder="nova" />
           </Form.Item>
           <Space>
             <Button icon={<ExperimentOutlined />} onClick={handleTestTTS}>

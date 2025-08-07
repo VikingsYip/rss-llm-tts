@@ -146,6 +146,8 @@ class ConfigController {
         ttsApiKey,
         ttsApiSecret,
         ttsVoice,
+        ttsVoiceHost,
+        ttsVoiceGuest,
         // 代理配置
         httpProxy,
         httpsProxy,
@@ -227,6 +229,18 @@ class ConfigController {
         tts_voice: {
           value: ttsVoice,
           description: 'TTS发音人',
+          type: 'string',
+          isEncrypted: false
+        },
+        tts_voice_host: {
+          value: ttsVoiceHost || 'alloy',
+          description: 'TTS发音人（主持人）',
+          type: 'string',
+          isEncrypted: false
+        },
+        tts_voice_guest: {
+          value: ttsVoiceGuest || 'nova',
+          description: 'TTS发音人（嘉宾）',
           type: 'string',
           isEncrypted: false
         },
@@ -428,6 +442,18 @@ class ConfigController {
         tts_voice: {
           value: 'x5_lingfeiyi_flow',
           description: 'TTS发音人',
+          type: 'string',
+          isEncrypted: false
+        },
+        tts_voice_host: {
+          value: 'alloy',
+          description: 'TTS发音人（主持人）',
+          type: 'string',
+          isEncrypted: false
+        },
+        tts_voice_guest: {
+          value: 'nova',
+          description: 'TTS发音人（嘉宾）',
           type: 'string',
           isEncrypted: false
         },

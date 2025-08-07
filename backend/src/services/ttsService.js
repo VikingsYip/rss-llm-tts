@@ -226,6 +226,26 @@ class TTSService {
     ];
   }
 
+  // 获取主持人发音人
+  async getHostVoice() {
+    try {
+      return await this.getConfigValue('tts_voice_host', 'alloy');
+    } catch (error) {
+      logger.error('获取主持人发音人失败:', error);
+      return 'alloy';
+    }
+  }
+
+  // 获取嘉宾发音人
+  async getGuestVoice() {
+    try {
+      return await this.getConfigValue('tts_voice_guest', 'nova');
+    } catch (error) {
+      logger.error('获取嘉宾发音人失败:', error);
+      return 'nova';
+    }
+  }
+
   // 删除音频文件
   async deleteAudioFile(filename) {
     try {
