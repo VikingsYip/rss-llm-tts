@@ -150,6 +150,8 @@ class ConfigController {
         httpProxy,
         httpsProxy,
         noProxy,
+        httpProxyEnabled,
+        httpProxyUrl,
         // RSS配置
         rssFetchInterval,
         newsRetentionHours,
@@ -243,6 +245,18 @@ class ConfigController {
         no_proxy: {
           value: noProxy || '',
           description: '不使用代理的地址列表 (可选)',
+          type: 'string',
+          isEncrypted: false
+        },
+        http_proxy_enabled: {
+          value: httpProxyEnabled || false,
+          description: '是否启用HTTP代理',
+          type: 'boolean',
+          isEncrypted: false
+        },
+        http_proxy_url: {
+          value: httpProxyUrl || '',
+          description: 'HTTP代理地址',
           type: 'string',
           isEncrypted: false
         },
@@ -432,6 +446,18 @@ class ConfigController {
         no_proxy: {
           value: '',
           description: '不使用代理的地址列表 (可选)',
+          type: 'string',
+          isEncrypted: false
+        },
+        http_proxy_enabled: {
+          value: false,
+          description: '是否启用HTTP代理',
+          type: 'boolean',
+          isEncrypted: false
+        },
+        http_proxy_url: {
+          value: '',
+          description: 'HTTP代理地址',
           type: 'string',
           isEncrypted: false
         },

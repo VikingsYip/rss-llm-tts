@@ -10,7 +10,8 @@ import {
   message, 
   Tabs,
   Spin,
-  Alert
+  Alert,
+  Switch
 } from 'antd';
 import { 
   SaveOutlined, 
@@ -56,6 +57,8 @@ const Settings = () => {
           httpProxy: data.data.http_proxy || '',
           httpsProxy: data.data.https_proxy || '',
           noProxy: data.data.no_proxy || '',
+          httpProxyEnabled: data.data.http_proxy_enabled || false,
+          httpProxyUrl: data.data.http_proxy_url || '',
         };
         
         form.setFieldsValue(initialValues);
@@ -344,8 +347,31 @@ const Settings = () => {
             style={{ marginBottom: 16 }}
           />
           <Form.Item
-            name="httpProxy"
+            name="httpProxyEnabled"
+            label="启用HTTP代理"
+            valuePropName="checked"
+          >
+            <Switch />
+          </Form.Item>
+          <Form.Item
+            name="httpProxyUrl"
             label="HTTP代理地址"
+            rules={[
+              ({ getFieldValue }) => ({
+                validator(_, value) {
+                  if (!getFieldValue('httpProxyEnabled') || value) {
+                    return Promise.resolve();
+                  }
+                  return Promise.reject(new Error('启用HTTP代理时，代理地址不能为空'));
+                },
+              }),
+            ]}
+          >
+            <Input placeholder="http://proxy.example.com:8080" />
+          </Form.Item>
+          <Form.Item
+            name="httpProxy"
+            label="HTTP代理地址（旧版兼容）"
           >
             <Input placeholder="http://proxy.example.com:8080" />
           </Form.Item>

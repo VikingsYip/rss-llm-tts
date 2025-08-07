@@ -44,6 +44,27 @@ class LLMService {
     }
   }
 
+  // 获取代理配置
+  async getProxyConfig() {
+    try {
+      const httpProxyEnabled = await this.getConfigValue('http_proxy_enabled', false);
+      const httpProxyUrl = await this.getConfigValue('http_proxy_url', '');
+      
+      if (httpProxyEnabled && httpProxyUrl) {
+        return {
+          host: new URL(httpProxyUrl).hostname,
+          port: new URL(httpProxyUrl).port || 80,
+          protocol: new URL(httpProxyUrl).protocol.replace(':', '')
+        };
+      }
+      
+      return null;
+    } catch (error) {
+      logger.error('获取代理配置失败:', error);
+      return null;
+    }
+  }
+
   // 生成对话
   async generateDialogue(dialogueParams) {
     try {
@@ -148,6 +169,23 @@ ${character1}: [对话内容]
   // 调用LLM API
   async callLLMAPI(prompt) {
     try {
+      // 获取代理配置
+      const proxyConfig = await this.getProxyConfig();
+      
+      const axiosConfig = {
+        headers: {
+          'Authorization': `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: 60000
+      };
+
+      // 如果启用了代理，添加代理配置
+      if (proxyConfig) {
+        axiosConfig.proxy = proxyConfig;
+        logger.info(`使用代理调用LLM API: ${this.apiUrl}, 代理: ${proxyConfig.host}:${proxyConfig.port}`);
+      }
+
       const response = await axios.post(this.apiUrl, {
         model: this.model,
         messages: [
@@ -162,13 +200,7 @@ ${character1}: [对话内容]
         ],
         max_tokens: 3000,
         temperature: 0.7
-      }, {
-        headers: {
-          'Authorization': `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: 60000
-      });
+      }, axiosConfig);
 
       return response.data.choices[0].message.content;
     } catch (error) {
@@ -225,6 +257,23 @@ ${character1}: [对话内容]
     try {
       await this.initialize();
       
+      // 获取代理配置
+      const proxyConfig = await this.getProxyConfig();
+      
+      const axiosConfig = {
+        headers: {
+          'Authorization': `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: 10000
+      };
+
+      // 如果启用了代理，添加代理配置
+      if (proxyConfig) {
+        axiosConfig.proxy = proxyConfig;
+        logger.info(`使用代理测试LLM连接: ${this.apiUrl}, 代理: ${proxyConfig.host}:${proxyConfig.port}`);
+      }
+
       const response = await axios.post(this.apiUrl, {
         model: this.model,
         messages: [
@@ -234,13 +283,7 @@ ${character1}: [对话内容]
           }
         ],
         max_tokens: 50
-      }, {
-        headers: {
-          'Authorization': `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: 10000
-      });
+      }, axiosConfig);
 
       return {
         success: true,

@@ -20,6 +20,54 @@ class RssService {
     });
   }
 
+  // 获取代理配置
+  async getProxyConfig() {
+    try {
+      const httpProxyEnabled = await this.getConfigValue('http_proxy_enabled', false);
+      const httpProxyUrl = await this.getConfigValue('http_proxy_url', '');
+      
+      if (httpProxyEnabled && httpProxyUrl) {
+        return {
+          host: new URL(httpProxyUrl).hostname,
+          port: new URL(httpProxyUrl).port || 80,
+          protocol: new URL(httpProxyUrl).protocol.replace(':', '')
+        };
+      }
+      
+      return null;
+    } catch (error) {
+      logger.error('获取代理配置失败:', error);
+      return null;
+    }
+  }
+
+  // 使用代理获取RSS内容
+  async fetchRssWithProxy(url) {
+    try {
+      // 获取代理配置
+      const proxyConfig = await this.getProxyConfig();
+      
+      const axiosConfig = {
+        timeout: 15000,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+      };
+
+      // 如果启用了代理，添加代理配置
+      if (proxyConfig) {
+        axiosConfig.proxy = proxyConfig;
+        logger.info(`使用代理获取RSS: ${url}, 代理: ${proxyConfig.host}:${proxyConfig.port}`);
+      }
+
+      const response = await axios.get(url, axiosConfig);
+      return response.data;
+    } catch (error) {
+      logger.error(`获取RSS内容失败: ${url}`, error);
+      throw error;
+    }
+  }
+
   // 添加RSS源
   async addRssFeed(feedData) {
     try {
@@ -48,7 +96,12 @@ class RssService {
   // 验证RSS源
   async validateRssFeed(url) {
     try {
-      const feed = await this.parser.parseURL(url);
+      // 使用代理获取RSS内容
+      const rssContent = await this.fetchRssWithProxy(url);
+      
+      // 解析RSS内容
+      const feed = await this.parser.parseString(rssContent);
+      
       if (!feed.title || !feed.items || feed.items.length === 0) {
         throw new Error('无效的RSS源');
       }
@@ -67,7 +120,12 @@ class RssService {
         return;
       }
 
-      const rssData = await this.parser.parseURL(feed.url);
+      // 使用代理获取RSS内容
+      const rssContent = await this.fetchRssWithProxy(feed.url);
+      
+      // 解析RSS内容
+      const rssData = await this.parser.parseString(rssContent);
+      
       const newsCount = await this.processFeedItems(rssData.items, feed);
       
       // 更新最后抓取时间
@@ -149,12 +207,23 @@ class RssService {
   // 获取完整内容
   async fetchFullContent(url) {
     try {
-      const response = await axios.get(url, {
+      // 获取代理配置
+      const proxyConfig = await this.getProxyConfig();
+      
+      const axiosConfig = {
         timeout: 10000,
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         }
-      });
+      };
+
+      // 如果启用了代理，添加代理配置
+      if (proxyConfig) {
+        axiosConfig.proxy = proxyConfig;
+        logger.info(`使用代理获取内容: ${url}, 代理: ${proxyConfig.host}:${proxyConfig.port}`);
+      }
+
+      const response = await axios.get(url, axiosConfig);
 
       const $ = cheerio.load(response.data);
       

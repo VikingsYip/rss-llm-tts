@@ -100,6 +100,20 @@ const initializeDefaultConfigs = async () => {
       description: '对话轮次',
       type: 'number',
       isEncrypted: false
+    },
+    {
+      key: 'http_proxy_enabled',
+      value: 'false',
+      description: '是否启用HTTP代理',
+      type: 'boolean',
+      isEncrypted: false
+    },
+    {
+      key: 'http_proxy_url',
+      value: '',
+      description: 'HTTP代理地址',
+      type: 'string',
+      isEncrypted: false
     }
   ];
 

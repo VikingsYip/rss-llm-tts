@@ -1,13 +1,36 @@
-const { Dialogue, News } = require('../models');
+const { Dialogue, News, Config } = require('../models');
+const { decrypt } = require('../utils/encryption');
+const logger = require('../utils/logger');
 const configService = require('./configService');
 const xunfeiTtsService = require('./xunfeiTtsService');
-const logger = require('../utils/logger');
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 const { Op } = require('sequelize');
 
 class DialogueService {
+  // 获取代理配置
+  async getProxyConfig() {
+    try {
+      const configs = await configService.getAllConfigs();
+      const httpProxyEnabled = configs.http_proxy_enabled;
+      const httpProxyUrl = configs.http_proxy_url;
+      
+      if (httpProxyEnabled && httpProxyUrl) {
+        return {
+          host: new URL(httpProxyUrl).hostname,
+          port: new URL(httpProxyUrl).port || 80,
+          protocol: new URL(httpProxyUrl).protocol.replace(':', '')
+        };
+      }
+      
+      return null;
+    } catch (error) {
+      logger.error('获取代理配置失败:', error);
+      return null;
+    }
+  }
+
   // 创建对话
   async createDialogue(dialogueData) {
     try {
@@ -353,6 +376,23 @@ ${newsDetails}
 现在请开始生成对话内容：`;
 
       // 调用DeepSeek API
+      // 获取代理配置
+      const proxyConfig = await this.getProxyConfig();
+      
+      const axiosConfig = {
+        headers: {
+          'Authorization': `Bearer ${llmConfig.apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: 60000
+      };
+
+      // 如果启用了代理，添加代理配置
+      if (proxyConfig) {
+        axiosConfig.proxy = proxyConfig;
+        logger.info(`使用代理调用LLM API: ${llmConfig.apiUrl}, 代理: ${proxyConfig.host}:${proxyConfig.port}`);
+      }
+
       const response = await axios.post(llmConfig.apiUrl, {
         model: llmConfig.model,
         messages: [
@@ -368,13 +408,7 @@ ${newsDetails}
         temperature: 0.7,
         max_tokens: 4000,
         top_p: 0.9
-      }, {
-        headers: {
-          'Authorization': `Bearer ${llmConfig.apiKey}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: 60000
-      });
+      }, axiosConfig);
 
       const result = response.data.choices[0].message.content;
       logger.info('LLM API调用成功');
@@ -499,19 +533,30 @@ ${newsDetails}
   // OpenAI兼容的TTS API调用
   async callOpenAITTS(ttsConfig, text, filepath) {
     try {
-      const response = await axios.post(ttsConfig.apiUrl, {
-        model: 'tts-1',
-        input: text,
-        voice: ttsConfig.voice,
-        response_format: 'mp3'
-      }, {
+      // 获取代理配置
+      const proxyConfig = await this.getProxyConfig();
+      
+      const axiosConfig = {
         headers: {
           'Authorization': `Bearer ${ttsConfig.apiKey}`,
           'Content-Type': 'application/json'
         },
         responseType: 'stream',
         timeout: 120000
-      });
+      };
+
+      // 如果启用了代理，添加代理配置
+      if (proxyConfig) {
+        axiosConfig.proxy = proxyConfig;
+        logger.info(`使用代理调用OpenAI TTS API: ${ttsConfig.apiUrl}, 代理: ${proxyConfig.host}:${proxyConfig.port}`);
+      }
+
+      const response = await axios.post(ttsConfig.apiUrl, {
+        model: 'tts-1',
+        input: text,
+        voice: ttsConfig.voice,
+        response_format: 'mp3'
+      }, axiosConfig);
 
       // 保存音频文件
       const writer = fs.createWriteStream(filepath);
