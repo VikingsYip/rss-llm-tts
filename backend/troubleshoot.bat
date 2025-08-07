@@ -9,18 +9,20 @@ echo 1. 检查数据库连接
 echo 2. 检查内存使用情况
 echo 3. 检查环境变量配置
 echo 4. 检查RSS服务状态
-echo 5. 运行所有检查
-echo 6. 退出
+echo 5. 测试批量更新RSS源功能
+echo 6. 运行所有检查
+echo 7. 退出
 echo.
 
-set /p choice=请输入选项 (1-6): 
+set /p choice=请输入选项 (1-7): 
 
 if "%choice%"=="1" goto check_db
 if "%choice%"=="2" goto check_memory
 if "%choice%"=="3" goto check_env
 if "%choice%"=="4" goto check_rss
-if "%choice%"=="5" goto check_all
-if "%choice%"=="6" goto exit
+if "%choice%"=="5" goto test_batch_update
+if "%choice%"=="6" goto check_all
+if "%choice%"=="7" goto exit
 goto invalid
 
 :check_db
@@ -56,6 +58,12 @@ echo 正在检查RSS服务状态...
 node check-rss-status.js
 goto end
 
+:test_batch_update
+echo.
+echo 正在测试批量更新RSS源功能...
+node test-batch-update.js
+goto end
+
 :check_all
 echo.
 echo 正在运行所有检查...
@@ -76,6 +84,9 @@ echo NODE_ENV: %NODE_ENV%
 echo.
 echo 4. 检查RSS服务状态...
 node check-rss-status.js
+echo.
+echo 5. 测试批量更新RSS源功能...
+node test-batch-update.js
 goto end
 
 :invalid

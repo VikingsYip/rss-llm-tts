@@ -19,7 +19,8 @@ import {
   Checkbox,
   Divider,
   Row,
-  Col
+  Col,
+  Pagination
 } from 'antd';
 import { 
   PlusOutlined, 
@@ -56,12 +57,43 @@ const Dialogues = () => {
   const [newsLoading, setNewsLoading] = useState(false);
   const [selectedNews, setSelectedNews] = useState([]);
   const [newsSearchKeyword, setNewsSearchKeyword] = useState('');
+  const [newsSelectedCategory, setNewsSelectedCategory] = useState(''); // 新增：选中的分类
   const [showNewsSelector, setShowNewsSelector] = useState(false);
   const [newsPagination, setNewsPagination] = useState({
     current: 1,
     pageSize: 10,
     total: 0
   });
+  
+  // 新闻分类列表
+  const newsCategories = [
+    { value: '', label: '全部分类' },
+    { value: '官媒新闻', label: '官媒新闻' },
+    { value: '科技媒体', label: '科技媒体' },
+    { value: '财经商业', label: '财经商业' },
+    { value: '国际媒体', label: '国际媒体' },
+    { value: '自媒体博客', label: '自媒体博客' },
+    { value: '社区论坛', label: '社区论坛' },
+    { value: '生活文化', label: '生活文化' },
+    { value: '其他', label: '其他' }
+  ];
+
+  // 分类颜色映射
+  const categoryColors = {
+    '官媒新闻': 'red',
+    '科技媒体': 'blue',
+    '财经商业': 'green',
+    '国际媒体': 'purple',
+    '自媒体博客': 'orange',
+    '社区论坛': 'cyan',
+    '生活文化': 'pink',
+    '其他': 'default'
+  };
+
+  // 获取分类颜色
+  const getCategoryColor = (category) => {
+    return categoryColors[category] || 'default';
+  };
   
   const navigate = useNavigate();
 
@@ -109,13 +141,14 @@ const Dialogues = () => {
   };
 
   // 获取新闻列表
-  const fetchNews = async (page = 1, keyword = '') => {
+  const fetchNews = async (page = 1, keyword = '', category = '') => {
     setNewsLoading(true);
     try {
       const params = new URLSearchParams({
         page: page.toString(),
         limit: '20',
-        keyword: keyword
+        keyword: keyword,
+        category: category // 添加分类参数
       });
 
       const response = await fetch(`/api/news?${params}`);
@@ -147,12 +180,25 @@ const Dialogues = () => {
   // 处理新闻搜索
   const handleNewsSearch = (value) => {
     setNewsSearchKeyword(value);
-    fetchNews(1, value);
+    fetchNews(1, value, newsSelectedCategory);
   };
 
   // 处理新闻分页
   const handleNewsPagination = (page) => {
-    fetchNews(page, newsSearchKeyword);
+    fetchNews(page, newsSearchKeyword, newsSelectedCategory);
+  };
+
+  // 处理分类筛选
+  const handleCategoryChange = (value) => {
+    setNewsSelectedCategory(value);
+    fetchNews(1, newsSearchKeyword, value);
+  };
+
+  // 重置新闻筛选条件
+  const handleResetNewsFilter = () => {
+    setNewsSearchKeyword('');
+    setNewsSelectedCategory('');
+    fetchNews(1, '', '');
   };
 
   // 处理新闻选择
@@ -588,7 +634,10 @@ const Dialogues = () => {
                 onClick={() => {
                   setShowNewsSelector(!showNewsSelector);
                   if (!showNewsSelector) {
-                    fetchNews();
+                    // 重置筛选条件并加载数据
+                    setNewsSearchKeyword('');
+                    setNewsSelectedCategory('');
+                    fetchNews(1, '', '');
                   }
                 }}
               >
@@ -605,12 +654,40 @@ const Dialogues = () => {
           {showNewsSelector && (
             <div style={{ border: '1px solid #d9d9d9', borderRadius: '6px', padding: '16px', marginBottom: 16 }}>
               <div style={{ marginBottom: 16 }}>
-                <Search
-                  placeholder="搜索新闻标题或内容"
-                  onSearch={handleNewsSearch}
-                  style={{ width: 300 }}
-                  allowClear
-                />
+                <Space>
+                  <Select
+                    style={{ width: 150 }}
+                    placeholder="选择分类"
+                    value={newsSelectedCategory}
+                    onChange={handleCategoryChange}
+                  >
+                    {newsCategories.map(category => (
+                      <Option key={category.value} value={category.value}>
+                        {category.label}
+                      </Option>
+                    ))}
+                  </Select>
+                  <Search
+                    placeholder="搜索新闻标题或内容"
+                    onSearch={handleNewsSearch}
+                    style={{ width: 300 }}
+                    allowClear
+                  />
+                  {newsSearchKeyword || newsSelectedCategory ? (
+                    <Button 
+                      type="link" 
+                      size="small" 
+                      onClick={handleResetNewsFilter}
+                    >
+                      重置
+                    </Button>
+                  ) : null}
+                </Space>
+                <div style={{ marginTop: 8, color: '#666', fontSize: '12px' }}>
+                  共找到 {newsPagination.total} 条新闻
+                  {newsSelectedCategory && ` (分类: ${newsCategories.find(c => c.value === newsSelectedCategory)?.label})`}
+                  {newsSearchKeyword && ` (关键词: ${newsSearchKeyword})`}
+                </div>
               </div>
 
               <div style={{ maxHeight: '300px', overflow: 'auto' }}>
@@ -619,56 +696,55 @@ const Dialogues = () => {
                     <Spin />
                   </div>
                 ) : (
-                  <List
-                    dataSource={newsList}
-                    renderItem={(news) => (
-                      <List.Item style={{ padding: '8px 0' }}>
-                        <Checkbox
-                          checked={selectedNews.some(n => n.id === news.id)}
-                          onChange={(e) => handleNewsSelect(news.id, e.target.checked)}
-                        >
-                          <div style={{ marginLeft: 8 }}>
-                            <div style={{ fontWeight: 'bold', marginBottom: 4 }}>
-                              {news.title}
+                  <>
+                    <List
+                      dataSource={newsList}
+                      renderItem={(news) => (
+                        <List.Item style={{ padding: '8px 0' }}>
+                          <Checkbox
+                            checked={selectedNews.some(n => n.id === news.id)}
+                            onChange={(e) => handleNewsSelect(news.id, e.target.checked)}
+                          >
+                            <div style={{ marginLeft: 8, width: '100%' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+                                <div style={{ fontWeight: 'bold', flex: 1 }}>
+                                  {news.title}
+                                </div>
+                                <Tag color={getCategoryColor(news.category)} style={{ marginLeft: 8 }}>
+                                  {news.category || '未分类'}
+                                </Tag>
+                              </div>
+                              <div style={{ color: '#666', fontSize: '12px', marginBottom: 4 }}>
+                                {news.summary?.substring(0, 100)}...
+                              </div>
+                              <div style={{ color: '#999', fontSize: '12px' }}>
+                                来源: {news.sourceName} | 时间: {new Date(news.publishedAt).toLocaleDateString()}
+                              </div>
                             </div>
-                            <div style={{ color: '#666', fontSize: '12px' }}>
-                              {news.summary?.substring(0, 100)}...
-                            </div>
-                            <div style={{ color: '#999', fontSize: '12px', marginTop: 4 }}>
-                              来源: {news.sourceName} | 时间: {new Date(news.publishedAt).toLocaleDateString()}
-                            </div>
-                          </div>
-                        </Checkbox>
-                      </List.Item>
+                          </Checkbox>
+                        </List.Item>
+                      )}
+                      locale={{
+                        emptyText: <Empty description="暂无新闻数据" />
+                      }}
+                    />
+                    {newsPagination.total > newsPagination.pageSize && (
+                      <div style={{ textAlign: 'center', marginTop: 16 }}>
+                        <Pagination
+                          current={newsPagination.current}
+                          pageSize={newsPagination.pageSize}
+                          total={newsPagination.total}
+                          showSizeChanger={false}
+                          showQuickJumper
+                          showTotal={(total, range) => `第 ${range[0]}-${range[1]} 条，共 ${total} 条`}
+                          onChange={handleNewsPagination}
+                          size="small"
+                        />
+                      </div>
                     )}
-                    locale={{
-                      emptyText: <Empty description="暂无新闻数据" />
-                    }}
-                  />
+                  </>
                 )}
               </div>
-
-              {newsPagination.total > 0 && (
-                <div style={{ marginTop: 16, textAlign: 'center' }}>
-                  <Button 
-                    size="small" 
-                    onClick={() => handleNewsPagination(newsPagination.current - 1)}
-                    disabled={newsPagination.current === 1}
-                  >
-                    上一页
-                  </Button>
-                  <span style={{ margin: '0 16px' }}>
-                    第 {newsPagination.current} 页，共 {Math.ceil(newsPagination.total / newsPagination.pageSize)} 页
-                  </span>
-                  <Button 
-                    size="small" 
-                    onClick={() => handleNewsPagination(newsPagination.current + 1)}
-                    disabled={newsPagination.current >= Math.ceil(newsPagination.total / newsPagination.pageSize)}
-                  >
-                    下一页
-                  </Button>
-                </div>
-              )}
             </div>
           )}
 
@@ -688,8 +764,13 @@ const Dialogues = () => {
                     borderBottom: '1px solid #f0f0f0'
                   }}>
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 'bold', fontSize: '12px' }}>
-                        {news.title}
+                      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 2 }}>
+                        <div style={{ fontWeight: 'bold', fontSize: '12px', flex: 1 }}>
+                          {news.title}
+                        </div>
+                        <Tag color={getCategoryColor(news.category)} size="small" style={{ marginLeft: 8 }}>
+                          {news.category || '未分类'}
+                        </Tag>
                       </div>
                       <div style={{ color: '#666', fontSize: '11px' }}>
                         {news.sourceName} | {new Date(news.publishedAt).toLocaleDateString()}

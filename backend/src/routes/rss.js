@@ -5,11 +5,13 @@ const rssController = require('../controllers/rssController');
 // RSS源管理
 router.get('/feeds', rssController.getAllFeeds);
 router.post('/feeds', rssController.addFeed);
+
+// 批量操作 - 必须放在具体ID路由之前
+router.put('/feeds/batch-update', rssController.batchUpdateFeeds);
+
+// 具体ID操作 - 放在批量操作之后
 router.put('/feeds/:id', rssController.updateFeed);
 router.delete('/feeds/:id', rssController.deleteFeed);
-
-// 批量操作
-router.put('/feeds/batch-update', rssController.batchUpdateFeeds);
 
 // OPML批量导入
 router.post('/feeds/import-opml', rssController.importOpml);

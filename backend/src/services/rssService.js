@@ -548,13 +548,45 @@ class RssService {
         details: []
       };
 
+      // 验证输入参数
+      if (!ids || !Array.isArray(ids) || ids.length === 0) {
+        throw new Error('请提供有效的RSS源ID列表');
+      }
+
+      if (typeof isActive !== 'boolean') {
+        throw new Error('请提供有效的状态值');
+      }
+
+      logger.info(`开始批量${isActive ? '启用' : '禁用'} ${ids.length} 个RSS源`);
+
       for (const id of ids) {
         try {
-          const feed = await RssFeed.findByPk(id);
-          if (!feed) {
+          // 验证ID格式
+          if (!id || (typeof id !== 'number' && typeof id !== 'string')) {
             result.failed++;
             result.details.push({
               id,
+              error: '无效的ID格式'
+            });
+            continue;
+          }
+
+          // 尝试转换为数字ID
+          const numericId = parseInt(id);
+          if (isNaN(numericId)) {
+            result.failed++;
+            result.details.push({
+              id,
+              error: 'ID必须是有效的数字'
+            });
+            continue;
+          }
+
+          const feed = await RssFeed.findByPk(numericId);
+          if (!feed) {
+            result.failed++;
+            result.details.push({
+              id: numericId,
               error: 'RSS源不存在'
             });
             continue;
@@ -563,12 +595,12 @@ class RssService {
           await feed.update({ isActive });
           result.updated++;
           result.details.push({
-            id,
+            id: numericId,
             name: feed.name,
             success: true
           });
 
-          logger.info(`RSS源状态更新成功: ${feed.name} -> ${isActive ? '启用' : '禁用'}`);
+          logger.info(`RSS源状态更新成功: ${feed.name} (ID: ${numericId}) -> ${isActive ? '启用' : '禁用'}`);
         } catch (error) {
           result.failed++;
           result.details.push({

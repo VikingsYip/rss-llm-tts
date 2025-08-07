@@ -285,6 +285,8 @@ class RSSController {
     try {
       const { ids, isActive } = req.body;
       
+      logger.info(`收到批量更新请求: ${ids?.length || 0} 个RSS源, 状态: ${isActive}`);
+      
       if (!ids || !Array.isArray(ids) || ids.length === 0) {
         return res.status(400).json({
           success: false,
@@ -304,18 +306,26 @@ class RSSController {
       // 批量处理定时任务
       for (const detail of result.details) {
         if (detail.success) {
-          if (isActive) {
-            // 启用RSS源，启动定时任务
-            const feed = await rssService.getFeedById(detail.id);
-            if (feed) {
-              await rssFetchJob.scheduleFeedFetch(feed);
+          try {
+            if (isActive) {
+              // 启用RSS源，启动定时任务
+              const feed = await rssService.getFeedById(detail.id);
+              if (feed) {
+                await rssFetchJob.scheduleFeedFetch(feed);
+                logger.info(`定时任务已启动: ${feed.name} (ID: ${detail.id})`);
+              }
+            } else {
+              // 禁用RSS源，停止定时任务
+              rssFetchJob.stopFeedFetch(detail.id);
+              logger.info(`定时任务已停止: ID ${detail.id}`);
             }
-          } else {
-            // 禁用RSS源，停止定时任务
-            rssFetchJob.stopFeedFetch(detail.id);
+          } catch (taskError) {
+            logger.error(`处理定时任务失败: ID ${detail.id}`, taskError);
           }
         }
       }
+
+      logger.info(`批量${isActive ? '启用' : '禁用'}完成: 成功 ${result.updated}, 失败 ${result.failed}`);
 
       res.json({
         success: true,
@@ -323,7 +333,8 @@ class RSSController {
         data: {
           updated: result.updated,
           failed: result.failed,
-          total: ids.length
+          total: ids.length,
+          details: result.details
         }
       });
     } catch (error) {
