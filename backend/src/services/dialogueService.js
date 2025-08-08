@@ -7,6 +7,7 @@ const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 const { Op } = require('sequelize');
+const ttsConfig = require('../config/ttsConfig');
 
 class DialogueService {
   // 获取代理配置
@@ -218,7 +219,7 @@ class DialogueService {
         apiKey: configs.llm_api_key,
         model: configs.llm_model
       };
-      const ttsConfig = {
+      const ttsServiceConfig = {
         apiUrl: configs.tts_api_url,
         appId: configs.tts_app_id,
         apiKey: configs.tts_api_key,
@@ -230,7 +231,7 @@ class DialogueService {
       if (!llmConfig.apiUrl || !llmConfig.apiKey || !llmConfig.model) {
         throw new Error('LLM配置不完整，请在设置中配置LLM API');
       }
-      if (!ttsConfig.apiUrl || !ttsConfig.appId || !ttsConfig.apiKey || !ttsConfig.apiSecret || !ttsConfig.voice) {
+      if (!ttsServiceConfig.apiUrl || !ttsServiceConfig.appId || !ttsServiceConfig.apiKey || !ttsServiceConfig.apiSecret || !ttsServiceConfig.voice) {
         throw new Error('TTS配置不完整，请在设置中配置TTS API');
       }
 
@@ -279,7 +280,7 @@ class DialogueService {
       });
 
       // 调用TTS生成音频
-      const audioInfo = await this.callTTSAPI(ttsConfig, dialogueContent);
+      const audioInfo = await this.callTTSAPI(ttsServiceConfig, dialogueContent);
 
       // 更新对话记录
       await dialogue.update({
@@ -344,13 +345,19 @@ ${news.content ? `详细内容: ${news.content.substring(0, 500)}...` : ''}`
 ${newsDetails}
 
 ## 生成要求
-1. **内容深度**：对话要有深度，不是简单的问答，要有见解和分析
-2. **逻辑连贯**：每轮对话都要自然衔接，逻辑清晰
-3. **角色特色**：${character1}和${character2}要有各自的语言特点和观点
-4. **新闻结合**：充分利用提供的新闻内容，引用具体事实和数据
-5. **对话自然**：语言要自然流畅，符合${dialogueTypeDetails.name}的特点
-6. **观点多元**：展现不同角度的思考和讨论
-7. **结构完整**：对话要有开头、发展、高潮和总结
+1. **口语化表达**：使用自然、流畅的口语表达，避免过于书面化的语言
+2. **内容深度**：对话要有深度，不是简单的问答，要有见解和分析
+3. **逻辑连贯**：每轮对话都要自然衔接，逻辑清晰
+4. **角色特色**：${character1}和${character2}要有各自的语言特点和观点
+5. **新闻结合**：充分利用提供的新闻内容，引用具体事实和数据
+6. **对话自然**：语言要自然流畅，符合${dialogueTypeDetails.name}的特点
+7. **观点多元**：展现不同角度的思考和讨论
+8. **结构完整**：对话要有开头、发展、高潮和总结
+9. **口语化特点**：
+   - 使用日常用语和表达方式
+   - 适当使用语气词和感叹词
+   - 避免过于正式的学术语言
+   - 保持对话的自然节奏和语调
 
 ## 对话结构建议
 - 前1-2轮：开场介绍话题，引入新闻内容
@@ -364,11 +371,11 @@ ${newsDetails}
   "rounds": [
     {
       "speaker": "${character1}",
-      "text": "具体的对话内容，要丰富详细，至少100字以上"
+      "text": "具体的对话内容，要丰富详细，至少100字以上，使用口语化表达"
     },
     {
       "speaker": "${character2}",
-      "text": "具体的对话内容，要丰富详细，至少100字以上"
+      "text": "具体的对话内容，要丰富详细，至少100字以上，使用口语化表达"
     }
   ]
 }
@@ -416,14 +423,39 @@ ${newsDetails}
       // 解析JSON结果
       let dialogueData;
       try {
-        // 尝试提取JSON部分（去除可能的markdown标记）
-        const jsonMatch = result.match(/\{[\s\S]*\}/);
-        const jsonStr = jsonMatch ? jsonMatch[0] : result;
+        // 清理和提取JSON部分
+        let jsonStr = result.trim();
+        
+        // 移除可能的markdown代码块标记
+        jsonStr = jsonStr.replace(/```json\s*/g, '').replace(/```\s*$/g, '');
+        
+        // 尝试提取JSON对象
+        const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          jsonStr = jsonMatch[0];
+        }
+        
+        // 尝试修复常见的JSON格式问题
+        jsonStr = jsonStr
+          .replace(/([^\\])"/g, '$1"') // 修复未转义的引号
+          .replace(/,\s*}/g, '}') // 移除尾随逗号
+          .replace(/,\s*]/g, ']'); // 移除数组中的尾随逗号
+        
+        logger.info('尝试解析JSON:', jsonStr.substring(0, 200) + '...');
+        
         dialogueData = JSON.parse(jsonStr);
         
         // 验证数据结构
         if (!dialogueData.rounds || !Array.isArray(dialogueData.rounds)) {
-          throw new Error('Invalid dialogue structure');
+          throw new Error('Invalid dialogue structure: missing or invalid rounds array');
+        }
+        
+        // 验证每个轮次的结构
+        for (let i = 0; i < dialogueData.rounds.length; i++) {
+          const round = dialogueData.rounds[i];
+          if (!round.speaker || !round.text) {
+            throw new Error(`Invalid round structure at index ${i}: missing speaker or text`);
+          }
         }
         
         // 确保对话轮次正确
@@ -436,6 +468,7 @@ ${newsDetails}
         
       } catch (parseError) {
         logger.warn('LLM返回结果解析失败，使用增强的模拟数据', parseError);
+        logger.info('原始返回内容:', result.substring(0, 500) + '...');
         dialogueData = this.generateEnhancedMockDialogue(character1, character2, rounds, newsContent, dialogueType);
       }
 
@@ -449,12 +482,26 @@ ${newsDetails}
   }
 
   // 调用TTS API生成音频
-  async callTTSAPI(ttsConfig, dialogueContent) {
+  async callTTSAPI(ttsServiceConfig, dialogueContent) {
     try {
       logger.info('调用TTS API生成音频');
       
-      // 将对话内容转换为音频文本
-      const audioText = dialogueContent.rounds.map(round => 
+      // 过滤掉主持人、嘉宾等角色，只保留主要对话内容
+      let filteredRounds = dialogueContent.rounds.filter(round => {
+        const speaker = round.speaker.toLowerCase();
+        // 使用配置文件中的角色过滤列表
+        return !ttsConfig.filterRoles.some(role => 
+          speaker.includes(role.toLowerCase())
+        );
+      });
+      
+      if (filteredRounds.length === 0) {
+        logger.warn('过滤后没有可用的对话内容，使用原始内容');
+        filteredRounds = dialogueContent.rounds;
+      }
+      
+      // 将过滤后的对话内容转换为音频文本
+      const audioText = filteredRounds.map(round => 
         `${round.speaker}：${round.text}`
       ).join('\n\n');
 
@@ -470,12 +517,12 @@ ${newsDetails}
       }
 
       // 如果是科大讯飞API，需要特殊处理
-      if (ttsConfig.apiUrl.includes('xf-yun.com')) {
+      if (ttsServiceConfig.apiUrl.includes('xf-yun.com')) {
         // 科大讯飞TTS API调用逻辑
-        await this.callXunfeiMultiVoiceTTS(ttsConfig, dialogueContent, filepath);
+        await this.callXunfeiMultiVoiceTTS(ttsServiceConfig, dialogueContent, filepath);
       } else {
         // OpenAI兼容的TTS API调用，使用不同发音人
-        await this.callOpenAITTSWithDifferentVoices(ttsConfig, dialogueContent, filepath);
+        await this.callOpenAITTSWithDifferentVoices(ttsServiceConfig, dialogueContent, filepath);
       }
 
       // 计算音频时长（估算，每分钟约200字）
@@ -499,12 +546,12 @@ ${newsDetails}
   }
 
   // 科大讯飞TTS API调用
-  async callXunfeiTTS(ttsConfig, text, filepath) {
+  async callXunfeiTTS(ttsServiceConfig, text, filepath) {
     try {
       logger.info('调用科大讯飞WebSocket TTS API');
       
       // 解析配置
-      const config = xunfeiTtsService.parseTtsConfig(ttsConfig);
+      const config = xunfeiTtsService.parseTtsConfig(ttsServiceConfig);
       
       // 调用WebSocket TTS服务
       const result = await xunfeiTtsService.generateTTS(config, text, filepath);
@@ -531,12 +578,12 @@ ${newsDetails}
   }
 
   // 科大讯飞多发音人TTS API调用
-  async callXunfeiMultiVoiceTTS(ttsConfig, dialogueContent, filepath) {
+  async callXunfeiMultiVoiceTTS(ttsServiceConfig, dialogueContent, filepath) {
     try {
       logger.info('调用科大讯飞多发音人TTS API');
       
       // 解析配置
-      const config = xunfeiTtsService.parseTtsConfig(ttsConfig);
+      const config = xunfeiTtsService.parseTtsConfig(ttsServiceConfig);
       
       // 调用多发音人TTS服务
       const result = await xunfeiTtsService.generateMultiVoiceTTS(config, dialogueContent, filepath);
@@ -563,14 +610,14 @@ ${newsDetails}
   }
 
   // OpenAI兼容的TTS API调用
-  async callOpenAITTS(ttsConfig, text, filepath) {
+  async callOpenAITTS(ttsServiceConfig, text, filepath) {
     try {
       // 获取代理配置
       const proxyConfig = await this.getProxyConfig();
       
       const axiosConfig = {
         headers: {
-          'Authorization': `Bearer ${ttsConfig.apiKey}`,
+          'Authorization': `Bearer ${ttsServiceConfig.apiKey}`,
           'Content-Type': 'application/json'
         },
         responseType: 'stream',
@@ -580,13 +627,13 @@ ${newsDetails}
       // 如果启用了代理，添加代理配置
       if (proxyConfig) {
         axiosConfig.proxy = proxyConfig;
-        logger.info(`使用代理调用OpenAI TTS API: ${ttsConfig.apiUrl}, 代理: ${proxyConfig.host}:${proxyConfig.port}`);
+        logger.info(`使用代理调用OpenAI TTS API: ${ttsServiceConfig.apiUrl}, 代理: ${proxyConfig.host}:${proxyConfig.port}`);
       }
 
-      const response = await axios.post(ttsConfig.apiUrl, {
+      const response = await axios.post(ttsServiceConfig.apiUrl, {
         model: 'tts-1',
         input: text,
-        voice: ttsConfig.voice,
+        voice: ttsServiceConfig.voice,
         response_format: 'mp3'
       }, axiosConfig);
 
@@ -606,7 +653,7 @@ ${newsDetails}
   }
 
   // OpenAI兼容的TTS API调用，使用不同发音人
-  async callOpenAITTSWithDifferentVoices(ttsConfig, dialogueContent, filepath) {
+  async callOpenAITTSWithDifferentVoices(ttsServiceConfig, dialogueContent, filepath) {
     try {
       logger.info('调用OpenAI TTS API，使用不同发音人');
       
@@ -615,7 +662,7 @@ ${newsDetails}
       
       const axiosConfig = {
         headers: {
-          'Authorization': `Bearer ${ttsConfig.apiKey}`,
+          'Authorization': `Bearer ${ttsServiceConfig.apiKey}`,
           'Content-Type': 'application/json'
         },
         responseType: 'arraybuffer',
@@ -625,7 +672,7 @@ ${newsDetails}
       // 如果启用了代理，添加代理配置
       if (proxyConfig) {
         axiosConfig.proxy = proxyConfig;
-        logger.info(`使用代理调用OpenAI TTS API: ${ttsConfig.apiUrl}, 代理: ${proxyConfig.host}:${proxyConfig.port}`);
+        logger.info(`使用代理调用OpenAI TTS API: ${ttsServiceConfig.apiUrl}, 代理: ${proxyConfig.host}:${proxyConfig.port}`);
       }
 
       // 获取配置的主持人和嘉宾发音人
@@ -635,8 +682,22 @@ ${newsDetails}
 
       let allAudioData = Buffer.alloc(0);
       
-      // 为每个对话轮次生成音频
-      for (const round of dialogueContent.rounds) {
+      // 过滤掉主持人、嘉宾等角色，只保留主要对话内容
+      let filteredRounds = dialogueContent.rounds.filter(round => {
+        const speaker = round.speaker.toLowerCase();
+        // 使用配置文件中的角色过滤列表
+        return !ttsConfig.filterRoles.some(role => 
+          speaker.includes(role.toLowerCase())
+        );
+      });
+      
+      if (filteredRounds.length === 0) {
+        logger.warn('过滤后没有可用的对话内容，使用原始内容');
+        filteredRounds = dialogueContent.rounds;
+      }
+      
+      // 为每个过滤后的对话轮次生成音频
+      for (const round of filteredRounds) {
         // 根据说话者选择发音人
         let voice = hostVoice; // 默认使用主持人发音人
         if (round.speaker.includes('嘉宾') || round.speaker.includes('专家') || round.speaker.includes('CEO')) {
@@ -646,11 +707,12 @@ ${newsDetails}
         logger.info(`为 ${round.speaker} 生成音频，使用发音人: ${voice}`);
 
         // 调用TTS API生成单个音频
-        const response = await axios.post(ttsConfig.apiUrl, {
+        const response = await axios.post(ttsServiceConfig.apiUrl, {
           model: 'tts-1',
           input: `${round.speaker}：${round.text}`,
           voice: voice,
-          response_format: 'mp3'
+          response_format: 'mp3',
+          speed: ttsConfig.speed.openai
         }, axiosConfig);
 
         // 将音频数据添加到总音频中

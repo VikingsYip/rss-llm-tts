@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const logger = require('../utils/logger');
+const ttsConfig = require('../config/ttsConfig');
 
 class XunfeiTtsService {
   constructor() {
@@ -156,7 +157,7 @@ class XunfeiTtsService {
               },
               tts: {
                 vcn: voice,
-                speed: 50,
+                speed: ttsConfig.speed.xunfei,
                 volume: 50,
                 pitch: 50,
                 bgs: 0,
@@ -369,9 +370,25 @@ class XunfeiTtsService {
 
       let allAudioData = Buffer.alloc(0);
       
-      // 为每个对话轮次生成音频
-      for (let i = 0; i < dialogueContent.rounds.length; i++) {
-        const round = dialogueContent.rounds[i];
+      // 过滤掉主持人、嘉宾等角色，只保留主要对话内容
+      let filteredRounds = dialogueContent.rounds.filter(round => {
+        const speaker = round.speaker.toLowerCase();
+        // 使用配置文件中的角色过滤列表
+        return !ttsConfig.filterRoles.some(role => 
+          speaker.includes(role.toLowerCase())
+        );
+      });
+      
+      if (filteredRounds.length === 0) {
+        logger.warn('过滤后没有可用的对话内容，使用原始内容');
+        filteredRounds = dialogueContent.rounds;
+      }
+      
+      logger.info(`过滤后对话轮次数量: ${filteredRounds.length}`);
+      
+      // 为每个过滤后的对话轮次生成音频
+      for (let i = 0; i < filteredRounds.length; i++) {
+        const round = filteredRounds[i];
         
         // 根据说话者选择发音人
         let voice = hostVoice; // 默认使用主持人发音人

@@ -4,6 +4,7 @@ const path = require('path');
 const logger = require('../utils/logger');
 const { Config } = require('../models');
 const { decrypt } = require('../utils/encryption');
+const ttsConfig = require('../config/ttsConfig');
 
 class TTSService {
   constructor() {
@@ -181,7 +182,7 @@ class TTSService {
         input: text,
         voice: voice,
         response_format: 'mp3',
-        speed: 1.0
+        speed: ttsConfig.speed.openai
       }, axiosConfig);
 
       return Buffer.from(response.data);
