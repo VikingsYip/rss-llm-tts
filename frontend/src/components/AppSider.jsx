@@ -1,5 +1,5 @@
 import React from 'react';
-import { Layout, Menu } from 'antd';
+import { Layout, Menu, Drawer } from 'antd';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   DashboardOutlined,
@@ -12,7 +12,7 @@ import {
 
 const { Sider } = Layout;
 
-const AppSider = () => {
+const AppSider = ({ collapsed, isMobile, onClose }) => {
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -49,14 +49,63 @@ const AppSider = () => {
     },
   ];
 
+  const handleMenuClick = ({ key }) => {
+    navigate(key);
+    // 在移动端点击菜单后关闭抽屉
+    if (isMobile && onClose) {
+      onClose();
+    }
+  };
+
+  // 移动端使用抽屉
+  if (isMobile) {
+    return (
+      <Drawer
+        title="菜单"
+        placement="left"
+        onClose={onClose}
+        open={!collapsed}
+        width={250}
+        bodyStyle={{ padding: 0 }}
+      >
+        <Menu
+          mode="inline"
+          selectedKeys={[location.pathname]}
+          style={{ height: '100%', borderRight: 0 }}
+          items={menuItems}
+          onClick={handleMenuClick}
+        />
+      </Drawer>
+    );
+  }
+
+  // 桌面端使用侧边栏
   return (
-    <Sider width={200} className="app-sider">
+    <Sider 
+      width={200} 
+      className="app-sider"
+      collapsed={collapsed}
+      collapsedWidth={80}
+      trigger={null}
+      breakpoint="lg"
+      style={{
+        overflow: 'auto',
+        height: '100vh',
+        position: 'fixed',
+        left: 0,
+        top: 0,
+        bottom: 0,
+        zIndex: 1000,
+      }}
+    >
+      <div style={{ height: 64 }} /> {/* 为header留出空间 */}
       <Menu
         mode="inline"
         selectedKeys={[location.pathname]}
-        style={{ height: '100%', borderRight: 0 }}
+        style={{ height: 'calc(100% - 64px)', borderRight: 0 }}
         items={menuItems}
-        onClick={({ key }) => navigate(key)}
+        onClick={handleMenuClick}
+        inlineCollapsed={collapsed}
       />
     </Sider>
   );

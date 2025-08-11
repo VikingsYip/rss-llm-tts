@@ -15,7 +15,9 @@ import {
   message,
   Row,
   Col,
-  Statistic
+  Statistic,
+  Drawer,
+  Form
 } from 'antd';
 import { 
   FilterOutlined, 
@@ -25,7 +27,8 @@ import {
   StarOutlined,
   StarFilled,
   EyeInvisibleOutlined,
-  ReloadOutlined
+  ReloadOutlined,
+  SearchOutlined
 } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
 
@@ -81,9 +84,22 @@ const NewsList = () => {
   });
   const [categories, setCategories] = useState([]);
   const [sources, setSources] = useState([]);
+  const [isMobile, setIsMobile] = useState(false);
+  const [filterDrawerVisible, setFilterDrawerVisible] = useState(false);
   
   const navigate = useNavigate();
   const location = useLocation();
+
+  // 检测是否为移动设备
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth <= 768);
+    };
+
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   // 从URL参数解析状态
   const parseUrlParams = () => {
@@ -310,6 +326,11 @@ const NewsList = () => {
     saveFiltersToCookie(newFilters); // 保存到Cookie
     updateUrlParams(newFilters, 1);
     fetchNews(1, newFilters);
+    
+    // 在移动端应用筛选后关闭抽屉
+    if (isMobile) {
+      setFilterDrawerVisible(false);
+    }
   };
 
   // 处理分页
@@ -393,112 +414,251 @@ const NewsList = () => {
     return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
   };
 
+  // 移动端筛选抽屉
+  const renderMobileFilters = () => (
+    <Drawer
+      title="筛选条件"
+      placement="right"
+      onClose={() => setFilterDrawerVisible(false)}
+      open={filterDrawerVisible}
+      width={300}
+    >
+      <Form layout="vertical">
+        <Form.Item label="关键词搜索">
+          <Search
+            placeholder="搜索新闻标题或内容"
+            allowClear
+            onSearch={handleSearch}
+            defaultValue={filters.keyword}
+          />
+        </Form.Item>
+        
+        <Form.Item label="分类">
+          <Select
+            placeholder="选择分类"
+            allowClear
+            style={{ width: '100%' }}
+            onChange={(value) => handleFilterChange('category', value)}
+            value={filters.category}
+          >
+            {categories.map(category => (
+              <Option key={category} value={category}>{category}</Option>
+            ))}
+          </Select>
+        </Form.Item>
+        
+        <Form.Item label="来源">
+          <Select
+            placeholder="选择来源"
+            allowClear
+            style={{ width: '100%' }}
+            onChange={(value) => handleFilterChange('source', value)}
+            value={filters.source}
+          >
+            {sources.map(source => (
+              <Option key={source} value={source}>{source}</Option>
+            ))}
+          </Select>
+        </Form.Item>
+        
+        <Form.Item label="阅读状态">
+          <Select
+            placeholder="阅读状态"
+            allowClear
+            style={{ width: '100%' }}
+            onChange={(value) => handleFilterChange('isRead', value)}
+            value={filters.isRead}
+          >
+            <Option value="false">未读</Option>
+            <Option value="true">已读</Option>
+          </Select>
+        </Form.Item>
+        
+        <Form.Item label="收藏状态">
+          <Select
+            placeholder="收藏状态"
+            allowClear
+            style={{ width: '100%' }}
+            onChange={(value) => handleFilterChange('isFavorite', value)}
+            value={filters.isFavorite}
+          >
+            <Option value="true">已收藏</Option>
+            <Option value="false">未收藏</Option>
+          </Select>
+        </Form.Item>
+        
+        <Form.Item>
+          <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+            <Button 
+              icon={<ReloadOutlined />} 
+              onClick={() => {
+                handleResetFilters();
+                setFilterDrawerVisible(false);
+              }}
+            >
+              重置
+            </Button>
+            <Button 
+              type="primary" 
+              onClick={() => setFilterDrawerVisible(false)}
+            >
+              确定
+            </Button>
+          </Space>
+        </Form.Item>
+      </Form>
+    </Drawer>
+  );
+
   return (
-    <div style={{ padding: '24px' }}>
-      <Title level={2}>新闻列表</Title>
+    <div style={{ padding: isMobile ? '16px' : '24px' }}>
+      <Title level={isMobile ? 3 : 2}>新闻列表</Title>
       
-      {/* 统计信息 */}
-      <Row gutter={16} style={{ marginBottom: 24 }}>
-        <Col span={6}>
-          <Card>
-            <Statistic title="总新闻数" value={stats.total} />
-          </Card>
-        </Col>
-        <Col span={6}>
-          <Card>
-            <Statistic title="未读新闻" value={stats.unread} valueStyle={{ color: '#1890ff' }} />
-          </Card>
-        </Col>
-        <Col span={6}>
-          <Card>
-            <Statistic title="收藏新闻" value={stats.favorite} valueStyle={{ color: '#52c41a' }} />
-          </Card>
-        </Col>
-        <Col span={6}>
-          <Card>
-            <Statistic title="今日新增" value={news.filter(item => {
-              const today = new Date();
-              const newsDate = new Date(item.publishedAt);
-              return today.toDateString() === newsDate.toDateString();
-            }).length} valueStyle={{ color: '#faad14' }} />
-          </Card>
-        </Col>
-      </Row>
+      {/* 统计信息 - 移动端简化显示 */}
+      {isMobile ? (
+        <Row gutter={8} style={{ marginBottom: 16 }}>
+          <Col span={12}>
+            <Card size="small">
+              <Statistic title="总数" value={stats.total} />
+            </Card>
+          </Col>
+          <Col span={12}>
+            <Card size="small">
+              <Statistic title="未读" value={stats.unread} valueStyle={{ color: '#1890ff' }} />
+            </Card>
+          </Col>
+        </Row>
+      ) : (
+        <Row gutter={16} style={{ marginBottom: 24 }}>
+          <Col span={6}>
+            <Card>
+              <Statistic title="总新闻数" value={stats.total} />
+            </Card>
+          </Col>
+          <Col span={6}>
+            <Card>
+              <Statistic title="未读新闻" value={stats.unread} valueStyle={{ color: '#1890ff' }} />
+            </Card>
+          </Col>
+          <Col span={6}>
+            <Card>
+              <Statistic title="收藏新闻" value={stats.favorite} valueStyle={{ color: '#52c41a' }} />
+            </Card>
+          </Col>
+          <Col span={6}>
+            <Card>
+              <Statistic title="今日新增" value={news.filter(item => {
+                const today = new Date();
+                const newsDate = new Date(item.publishedAt);
+                return today.toDateString() === newsDate.toDateString();
+              }).length} valueStyle={{ color: '#faad14' }} />
+            </Card>
+          </Col>
+        </Row>
+      )}
 
       {/* 搜索和筛选 */}
       <Card style={{ marginBottom: 16 }}>
-        <Space wrap style={{ width: '100%', justifyContent: 'space-between' }}>
-          <Space wrap>
+        {isMobile ? (
+          <Space direction="vertical" style={{ width: '100%' }}>
             <Search
               placeholder="搜索新闻标题或内容"
               allowClear
-              style={{ width: 300 }}
               onSearch={handleSearch}
               defaultValue={filters.keyword}
+              size="large"
             />
-            
-            <Select
-              placeholder="选择分类"
-              allowClear
-              style={{ width: 120 }}
-              onChange={(value) => handleFilterChange('category', value)}
-              value={filters.category}
-            >
-              {categories.map(category => (
-                <Option key={category} value={category}>{category}</Option>
-              ))}
-            </Select>
-            
-            <Select
-              placeholder="选择来源"
-              allowClear
-              style={{ width: 150 }}
-              onChange={(value) => handleFilterChange('source', value)}
-              value={filters.source}
-            >
-              {sources.map(source => (
-                <Option key={source} value={source}>{source}</Option>
-              ))}
-            </Select>
-            
-            <Select
-              placeholder="阅读状态"
-              allowClear
-              style={{ width: 100 }}
-              onChange={(value) => handleFilterChange('isRead', value)}
-              value={filters.isRead}
-            >
-              <Option value="false">未读</Option>
-              <Option value="true">已读</Option>
-            </Select>
-            
-            <Select
-              placeholder="收藏状态"
-              allowClear
-              style={{ width: 100 }}
-              onChange={(value) => handleFilterChange('isFavorite', value)}
-              value={filters.isFavorite}
-            >
-              <Option value="true">已收藏</Option>
-              <Option value="false">未收藏</Option>
-            </Select>
+            <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+              <Button 
+                icon={<FilterOutlined />} 
+                onClick={() => setFilterDrawerVisible(true)}
+                size="large"
+              >
+                筛选条件
+              </Button>
+              <Button 
+                icon={<ReloadOutlined />} 
+                onClick={() => fetchNews(pagination.current, filters)}
+                size="large"
+              >
+                刷新
+              </Button>
+            </Space>
           </Space>
-          
-          <Space>
-            <Button 
-              icon={<ReloadOutlined />} 
-              onClick={() => fetchNews(pagination.current, filters)}
-            >
-              刷新
-            </Button>
-            <Button 
-              icon={<FilterOutlined />} 
-              onClick={handleResetFilters}
-            >
-              重置筛选
-            </Button>
+        ) : (
+          <Space wrap style={{ width: '100%', justifyContent: 'space-between' }}>
+            <Space wrap>
+              <Search
+                placeholder="搜索新闻标题或内容"
+                allowClear
+                style={{ width: 300 }}
+                onSearch={handleSearch}
+                defaultValue={filters.keyword}
+              />
+              
+              <Select
+                placeholder="选择分类"
+                allowClear
+                style={{ width: 120 }}
+                onChange={(value) => handleFilterChange('category', value)}
+                value={filters.category}
+              >
+                {categories.map(category => (
+                  <Option key={category} value={category}>{category}</Option>
+                ))}
+              </Select>
+              
+              <Select
+                placeholder="选择来源"
+                allowClear
+                style={{ width: 150 }}
+                onChange={(value) => handleFilterChange('source', value)}
+                value={filters.source}
+              >
+                {sources.map(source => (
+                  <Option key={source} value={source}>{source}</Option>
+                ))}
+              </Select>
+              
+              <Select
+                placeholder="阅读状态"
+                allowClear
+                style={{ width: 100 }}
+                onChange={(value) => handleFilterChange('isRead', value)}
+                value={filters.isRead}
+              >
+                <Option value="false">未读</Option>
+                <Option value="true">已读</Option>
+              </Select>
+              
+              <Select
+                placeholder="收藏状态"
+                allowClear
+                style={{ width: 100 }}
+                onChange={(value) => handleFilterChange('isFavorite', value)}
+                value={filters.isFavorite}
+              >
+                <Option value="true">已收藏</Option>
+                <Option value="false">未收藏</Option>
+              </Select>
+            </Space>
+            
+            <Space>
+              <Button 
+                icon={<ReloadOutlined />} 
+                onClick={() => fetchNews(pagination.current, filters)}
+              >
+                刷新
+              </Button>
+              <Button 
+                icon={<FilterOutlined />} 
+                onClick={handleResetFilters}
+              >
+                重置筛选
+              </Button>
+            </Space>
           </Space>
-        </Space>
+        )}
       </Card>
 
       {/* 新闻列表 */}
@@ -512,12 +672,16 @@ const NewsList = () => {
         ) : (
           <>
             <List
-              grid={{ gutter: 16, column: 1 }}
+              grid={{ 
+                gutter: isMobile ? 8 : 16, 
+                column: 1 
+              }}
               dataSource={news}
               renderItem={(item) => (
                 <List.Item>
                   <Card 
                     hoverable
+                    size={isMobile ? "small" : "default"}
                     style={{ 
                       opacity: item.isIgnored ? 0.6 : 1,
                       borderLeft: item.isRead ? '4px solid #d9d9d9' : '4px solid #1890ff'
@@ -543,11 +707,11 @@ const NewsList = () => {
                           onClick={() => handleNewsClick(item.id)}
                         >
                           <div style={{ marginBottom: 8 }}>
-                            <Space>
+                            <Space wrap>
                               <Text 
                                 strong 
                                 style={{ 
-                                  fontSize: '16px',
+                                  fontSize: isMobile ? '14px' : '16px',
                                   color: item.isRead ? '#666' : '#000'
                                 }}
                               >
@@ -559,30 +723,30 @@ const NewsList = () => {
                           </div>
                           
                           <div style={{ marginBottom: 8 }}>
-                            <Text type="secondary">
-                              {truncateSummary(item.summary)}
+                            <Text type="secondary" style={{ fontSize: isMobile ? '12px' : '14px' }}>
+                              {truncateSummary(item.summary, isMobile ? 100 : 150)}
                             </Text>
                           </div>
                         </div>
                         
                         <div style={{ marginBottom: 8 }}>
-                          <Space>
-                            <Tag color="blue">{item.category || '其他'}</Tag>
-                            <Tag color="green">{item.sourceName}</Tag>
-                            {item.author && <Tag color="orange">{item.author}</Tag>}
+                          <Space wrap>
+                            <Tag color="blue" size={isMobile ? "small" : "default"}>{item.category || '其他'}</Tag>
+                            <Tag color="green" size={isMobile ? "small" : "default"}>{item.sourceName}</Tag>
+                            {item.author && <Tag color="orange" size={isMobile ? "small" : "default"}>{item.author}</Tag>}
                           </Space>
                         </div>
                         
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <Text type="secondary" style={{ fontSize: '12px' }}>
+                          <Text type="secondary" style={{ fontSize: isMobile ? '10px' : '12px' }}>
                             {formatTime(item.publishedAt)}
                           </Text>
                           
-                          <Space>
+                          <Space size={isMobile ? "small" : "middle"}>
                             <Tooltip title={item.isRead ? '标记为未读' : '标记为已读'}>
                               <Button
                                 type="text"
-                                size="small"
+                                size={isMobile ? "small" : "small"}
                                 icon={item.isRead ? <EyeOutlined /> : <EyeInvisibleOutlined />}
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -594,7 +758,7 @@ const NewsList = () => {
                             <Tooltip title={item.isFavorite ? '取消收藏' : '收藏'}>
                               <Button
                                 type="text"
-                                size="small"
+                                size={isMobile ? "small" : "small"}
                                 icon={item.isFavorite ? <HeartFilled style={{ color: '#ff4d4f' }} /> : <HeartOutlined />}
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -606,7 +770,7 @@ const NewsList = () => {
                             <Tooltip title={item.isIgnored ? '取消忽略' : '忽略'}>
                               <Button
                                 type="text"
-                                size="small"
+                                size={isMobile ? "small" : "small"}
                                 icon={item.isIgnored ? <StarFilled style={{ color: '#faad14' }} /> : <StarOutlined />}
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -631,13 +795,18 @@ const NewsList = () => {
                 total={pagination.total}
                 onChange={handlePageChange}
                 showSizeChanger={false}
-                showQuickJumper
-                showTotal={(total, range) => `第 ${range[0]}-${range[1]} 条，共 ${total} 条新闻`}
+                showQuickJumper={!isMobile}
+                showTotal={!isMobile ? (total, range) => `第 ${range[0]}-${range[1]} 条，共 ${total} 条新闻` : undefined}
+                size={isMobile ? "small" : "default"}
+                simple={isMobile}
               />
             </div>
           </>
         )}
       </Card>
+
+      {/* 移动端筛选抽屉 */}
+      {renderMobileFilters()}
     </div>
   );
 };

@@ -4,6 +4,7 @@
 
 .main-layout {
   background: #f5f5f5;
+  transition: margin-left 0.2s ease;
 }
 
 .main-content {
@@ -17,6 +18,12 @@
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   padding: 0 24px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1001;
+  height: 64px;
 }
 
 .header-content {
@@ -53,6 +60,16 @@
 .app-sider {
   background: white;
   box-shadow: 2px 0 8px rgba(0, 0, 0, 0.1);
+  position: fixed;
+  left: 0;
+  top: 64px;
+  bottom: 0;
+  z-index: 1000;
+  transition: all 0.2s ease;
+}
+
+.app-sider.ant-layout-sider-collapsed {
+  width: 80px !important;
 }
 
 .app-menu {
@@ -80,10 +97,48 @@
   background: linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%);
 }
 
+/* 移动端抽屉样式 */
+.ant-drawer .ant-drawer-header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-bottom: none;
+}
+
+.ant-drawer .ant-drawer-title {
+  color: white;
+  font-weight: 600;
+}
+
+.ant-drawer .ant-drawer-close {
+  color: white;
+}
+
+.ant-drawer .ant-drawer-close:hover {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+/* 移动端菜单样式 */
+.mobile-menu .ant-menu-item {
+  height: 56px;
+  line-height: 56px;
+  font-size: 16px;
+  margin: 8px 16px;
+  border-radius: 8px;
+}
+
+.mobile-menu .ant-menu-item:hover {
+  background-color: #f0f0f0;
+}
+
+.mobile-menu .ant-menu-item-selected {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
 /* 响应式设计 */
 @media (max-width: 768px) {
   .main-content {
     padding: 16px;
+    margin-left: 0 !important;
   }
   
   .app-header {
@@ -101,5 +156,116 @@
   .feature-icon {
     font-size: 18px;
     margin-left: 12px;
+  }
+  
+  /* 移动端卡片样式 */
+  .ant-card {
+    border-radius: 8px;
+  }
+  
+  .ant-card-body {
+    padding: 16px;
+  }
+  
+  /* 移动端按钮样式 */
+  .ant-btn {
+    border-radius: 6px;
+  }
+  
+  .ant-btn-large {
+    height: 48px;
+    font-size: 16px;
+  }
+  
+  /* 移动端标签样式 */
+  .ant-tag {
+    border-radius: 4px;
+    font-size: 12px;
+  }
+  
+  /* 移动端分页样式 */
+  .ant-pagination {
+    font-size: 14px;
+  }
+  
+  .ant-pagination-item {
+    min-width: 32px;
+    height: 32px;
+    line-height: 30px;
+  }
+  
+  .ant-pagination-prev,
+  .ant-pagination-next {
+    min-width: 32px;
+    height: 32px;
+    line-height: 30px;
+  }
+}
+
+/* 超小屏幕优化 */
+@media (max-width: 480px) {
+  .main-content {
+    padding: 12px;
+  }
+  
+  .app-header {
+    padding: 0 12px;
+  }
+  
+  .header-title {
+    font-size: 14px !important;
+  }
+  
+  .ant-card-body {
+    padding: 12px;
+  }
+  
+  .ant-btn-large {
+    height: 44px;
+    font-size: 15px;
+  }
+}
+
+/* 平板设备优化 */
+@media (min-width: 769px) and (max-width: 1024px) {
+  .main-content {
+    padding: 20px;
+  }
+  
+  .app-sider {
+    width: 180px !important;
+  }
+  
+  .app-sider.ant-layout-sider-collapsed {
+    width: 70px !important;
+  }
+  
+  .main-layout {
+    margin-left: 180px;
+  }
+  
+  .main-layout.collapsed {
+    margin-left: 70px;
+  }
+}
+
+/* 侧边栏折叠时的内容调整 */
+.main-layout.sider-collapsed {
+  margin-left: 80px;
+}
+
+/* 侧边栏展开时的内容调整 */
+.main-layout.sider-expanded {
+  margin-left: 200px;
+}
+
+/* 移动端隐藏侧边栏 */
+@media (max-width: 768px) {
+  .app-sider {
+    display: none;
+  }
+  
+  .main-layout {
+    margin-left: 0 !important;
   }
 } 

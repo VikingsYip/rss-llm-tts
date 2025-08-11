@@ -9,7 +9,9 @@ import {
   Divider, 
   message,
   Tooltip,
-  Breadcrumb
+  Breadcrumb,
+  Row,
+  Col
 } from 'antd';
 import { 
   ArrowLeftOutlined, 
@@ -31,9 +33,21 @@ const { Title, Paragraph, Text } = Typography;
 const NewsDetail = () => {
   const [news, setNews] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [isMobile, setIsMobile] = useState(false);
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+
+  // 检测是否为移动设备
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth <= 768);
+    };
+
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   // 获取新闻详情
   const fetchNewsDetail = async () => {
@@ -121,7 +135,7 @@ const NewsDetail = () => {
 
   if (loading) {
     return (
-      <div style={{ padding: '24px', textAlign: 'center' }}>
+      <div style={{ padding: isMobile ? '16px' : '24px', textAlign: 'center' }}>
         <Spin size="large" />
       </div>
     );
@@ -129,9 +143,9 @@ const NewsDetail = () => {
 
   if (!news) {
     return (
-      <div style={{ padding: '24px' }}>
+      <div style={{ padding: isMobile ? '16px' : '24px' }}>
         <Card>
-          <Title level={2}>新闻不存在</Title>
+          <Title level={isMobile ? 3 : 2}>新闻不存在</Title>
           <Button type="primary" onClick={handleBackToList}>
             返回新闻列表
           </Button>
@@ -141,30 +155,42 @@ const NewsDetail = () => {
   }
 
   return (
-    <div style={{ padding: '24px' }}>
-      {/* 面包屑导航 */}
-      <Breadcrumb style={{ marginBottom: 16 }}>
-        <Breadcrumb.Item>
-          <a onClick={handleBackToList}>新闻列表</a>
-        </Breadcrumb.Item>
-        <Breadcrumb.Item>新闻详情</Breadcrumb.Item>
-      </Breadcrumb>
+    <div style={{ padding: isMobile ? '16px' : '24px' }}>
+      {/* 面包屑导航 - 移动端隐藏 */}
+      {!isMobile && (
+        <Breadcrumb style={{ marginBottom: 16 }}>
+          <Breadcrumb.Item>
+            <a onClick={handleBackToList}>新闻列表</a>
+          </Breadcrumb.Item>
+          <Breadcrumb.Item>新闻详情</Breadcrumb.Item>
+        </Breadcrumb>
+      )}
 
       <Card>
         {/* 操作按钮 */}
-        <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ 
+          marginBottom: 16, 
+          display: 'flex', 
+          flexDirection: isMobile ? 'column' : 'row',
+          justifyContent: 'space-between', 
+          alignItems: isMobile ? 'stretch' : 'center',
+          gap: isMobile ? 12 : 0
+        }}>
           <Button 
             icon={<ArrowLeftOutlined />} 
             onClick={handleBackToList}
+            size={isMobile ? "large" : "default"}
+            style={isMobile ? { width: '100%' } : {}}
           >
             返回列表
           </Button>
           
-          <Space>
+          <Space wrap style={{ justifyContent: isMobile ? 'center' : 'flex-end' }}>
             <Tooltip title={news.isRead ? '标记为未读' : '标记为已读'}>
               <Button
                 icon={news.isRead ? <EyeOutlined /> : <EyeInvisibleOutlined />}
                 onClick={() => updateNewsStatus('isRead', !news.isRead)}
+                size={isMobile ? "large" : "default"}
               >
                 {news.isRead ? '已读' : '未读'}
               </Button>
@@ -174,6 +200,7 @@ const NewsDetail = () => {
               <Button
                 icon={news.isFavorite ? <HeartFilled style={{ color: '#ff4d4f' }} /> : <HeartOutlined />}
                 onClick={() => updateNewsStatus('isFavorite', !news.isFavorite)}
+                size={isMobile ? "large" : "default"}
               >
                 {news.isFavorite ? '已收藏' : '收藏'}
               </Button>
@@ -183,6 +210,7 @@ const NewsDetail = () => {
               <Button
                 icon={news.isIgnored ? <StarFilled style={{ color: '#faad14' }} /> : <StarOutlined />}
                 onClick={() => updateNewsStatus('isIgnored', !news.isIgnored)}
+                size={isMobile ? "large" : "default"}
               >
                 {news.isIgnored ? '已忽略' : '忽略'}
               </Button>
@@ -193,6 +221,7 @@ const NewsDetail = () => {
                 <Button 
                   icon={<LinkOutlined />}
                   onClick={() => window.open(news.link, '_blank')}
+                  size={isMobile ? "large" : "default"}
                 >
                   原文
                 </Button>
@@ -204,36 +233,63 @@ const NewsDetail = () => {
         <Divider />
 
         {/* 新闻标题 */}
-        <Title level={1} style={{ marginBottom: 16 }}>
+        <Title level={isMobile ? 2 : 1} style={{ marginBottom: 16 }}>
           {news.title}
         </Title>
 
         {/* 新闻元信息 */}
         <div style={{ marginBottom: 24 }}>
-          <Space wrap>
-            <Space>
-              <CalendarOutlined />
-              <Text type="secondary">{formatTime(news.publishedAt)}</Text>
-            </Space>
-            
-            {news.author && (
+          {isMobile ? (
+            <Space direction="vertical" style={{ width: '100%' }}>
               <Space>
-                <UserOutlined />
-                <Text type="secondary">{news.author}</Text>
+                <CalendarOutlined />
+                <Text type="secondary">{formatTime(news.publishedAt)}</Text>
               </Space>
-            )}
-            
-            <Space>
-              <TagOutlined />
-              <Tag color="blue">{news.category || '其他'}</Tag>
+              
+              {news.author && (
+                <Space>
+                  <UserOutlined />
+                  <Text type="secondary">{news.author}</Text>
+                </Space>
+              )}
+              
+              <Space>
+                <TagOutlined />
+                <Tag color="blue">{news.category || '其他'}</Tag>
+              </Space>
+              
+              <Tag color="green">{news.sourceName}</Tag>
+              
+              {news.rssFeed && (
+                <Tag color="orange">{news.rssFeed.name}</Tag>
+              )}
             </Space>
-            
-            <Tag color="green">{news.sourceName}</Tag>
-            
-            {news.rssFeed && (
-              <Tag color="orange">{news.rssFeed.name}</Tag>
-            )}
-          </Space>
+          ) : (
+            <Space wrap>
+              <Space>
+                <CalendarOutlined />
+                <Text type="secondary">{formatTime(news.publishedAt)}</Text>
+              </Space>
+              
+              {news.author && (
+                <Space>
+                  <UserOutlined />
+                  <Text type="secondary">{news.author}</Text>
+                </Space>
+              )}
+              
+              <Space>
+                <TagOutlined />
+                <Tag color="blue">{news.category || '其他'}</Tag>
+              </Space>
+              
+              <Tag color="green">{news.sourceName}</Tag>
+              
+              {news.rssFeed && (
+                <Tag color="orange">{news.rssFeed.name}</Tag>
+              )}
+            </Space>
+          )}
         </div>
 
         <Divider />
@@ -241,8 +297,12 @@ const NewsDetail = () => {
         {/* 新闻摘要 */}
         {news.summary && (
           <div style={{ marginBottom: 24 }}>
-            <Title level={4}>摘要</Title>
-            <Paragraph style={{ fontSize: '16px', color: '#666' }}>
+            <Title level={isMobile ? 5 : 4}>摘要</Title>
+            <Paragraph style={{ 
+              fontSize: isMobile ? '14px' : '16px', 
+              color: '#666',
+              lineHeight: isMobile ? '1.6' : '1.8'
+            }}>
               {news.summary}
             </Paragraph>
           </div>
@@ -250,11 +310,11 @@ const NewsDetail = () => {
 
         {/* 新闻内容 */}
         <div>
-          <Title level={4}>正文</Title>
+          <Title level={isMobile ? 5 : 4}>正文</Title>
           <div 
             style={{ 
-              fontSize: '16px', 
-              lineHeight: '1.8',
+              fontSize: isMobile ? '14px' : '16px', 
+              lineHeight: isMobile ? '1.6' : '1.8',
               color: '#333'
             }}
             dangerouslySetInnerHTML={{ 
@@ -265,12 +325,13 @@ const NewsDetail = () => {
 
         {/* 原文链接 */}
         {news.link && (
-          <div style={{ marginTop: 32, textAlign: 'center' }}>
+          <div style={{ marginTop: isMobile ? 24 : 32, textAlign: 'center' }}>
             <Button 
               type="primary" 
-              size="large"
+              size={isMobile ? "large" : "large"}
               icon={<LinkOutlined />}
               onClick={() => window.open(news.link, '_blank')}
+              style={isMobile ? { width: '100%' } : {}}
             >
               查看原文
             </Button>

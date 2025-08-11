@@ -74,7 +74,7 @@ timeout /t 3 /nobreak >nul
 
 :: 启动前端服务
 echo 启动前端服务 (端口: 3000)...
-start "RSS系统前端" cmd /k "cd frontend && npm run dev"
+start "RSS系统前端" cmd /k "cd frontend && npm run dev -- --host 0.0.0.0 --port 3000"
 
 echo.
 echo ========================================

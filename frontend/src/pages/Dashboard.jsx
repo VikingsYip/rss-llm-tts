@@ -24,6 +24,7 @@ const { Title, Text } = Typography;
 
 const Dashboard = () => {
   const [loading, setLoading] = useState(true);
+  const [isMobile, setIsMobile] = useState(false);
   const [stats, setStats] = useState({
     news: { total: 0, today: 0 },
     feeds: { total: 0, active: 0 },
@@ -31,6 +32,17 @@ const Dashboard = () => {
     categories: [],
     sources: []
   });
+
+  // 检测是否为移动设备
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth <= 768);
+    };
+
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   // 获取仪表板统计数据
   const fetchDashboardStats = async () => {
@@ -73,15 +85,15 @@ const Dashboard = () => {
 
   if (loading) {
     return (
-      <div style={{ padding: '24px', textAlign: 'center' }}>
+      <div style={{ padding: isMobile ? '16px' : '24px', textAlign: 'center' }}>
         <Spin size="large" />
       </div>
     );
   }
 
   return (
-    <div style={{ padding: '24px' }}>
-      <Title level={2}>仪表板</Title>
+    <div style={{ padding: isMobile ? '16px' : '24px' }}>
+      <Title level={isMobile ? 3 : 2}>仪表板</Title>
       
       {/* 主要统计卡片 */}
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
