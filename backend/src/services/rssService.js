@@ -83,12 +83,26 @@ class RssService {
       const proxyConfig = await this.getProxyConfig();
       
       const axiosConfig = {
-        timeout: 30000, // 增加超时时间到30秒
+        timeout: 10000, // 减少超时时间到10秒
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+          'Connection': 'close' // 强制关闭连接
         },
-        maxContentLength: 10 * 1024 * 1024, // 限制响应大小为10MB
-        maxBodyLength: 10 * 1024 * 1024
+        maxContentLength: 5 * 1024 * 1024, // 限制响应大小为5MB
+        maxBodyLength: 5 * 1024 * 1024,
+        maxRedirects: 3,
+        // 强制关闭连接池
+        httpAgent: new (require('http').Agent)({ 
+          keepAlive: false,
+          maxSockets: 5,
+          timeout: 10000
+        }),
+        httpsAgent: new (require('https').Agent)({ 
+          keepAlive: false,
+          maxSockets: 5,
+          timeout: 10000,
+          rejectUnauthorized: false
+        })
       };
 
       // 如果启用了代理，添加代理配置

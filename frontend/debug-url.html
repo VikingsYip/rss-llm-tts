@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>URL参数调试</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .debug-section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .result { background: #f5f5f5; padding: 10px; margin: 10px 0; border-radius: 3px; }
+        .error { background: #ffebee; color: #c62828; }
+        .success { background: #e8f5e8; color: #2e7d32; }
+    </style>
+</head>
+<body>
+    <h1>URL参数调试工具</h1>
+    
+    <div class="debug-section">
+        <h3>当前页面信息</h3>
+        <div class="result">
+            <strong>完整URL:</strong> <span id="fullUrl"></span><br>
+            <strong>Search部分:</strong> <span id="searchPart"></span><br>
+            <strong>Pathname:</strong> <span id="pathname"></span>
+        </div>
+    </div>
+
+    <div class="debug-section">
+        <h3>URL参数解析结果</h3>
+        <div class="result" id="parseResult"></div>
+    </div>
+
+    <div class="debug-section">
+        <h3>测试不同URL格式</h3>
+        <button onclick="testUrl('?category=科技媒体')">测试1: 正常参数</button>
+        <button onclick="testUrl('?%3Fcategory=%E7%A7%91%E6%8A%80%E5%AA%92%E4%BD%93')">测试2: 双重编码</button>
+        <button onclick="testUrl('?keyword=AI&category=科技媒体')">测试3: 多参数</button>
+        <button onclick="testUrl('')">测试4: 空参数</button>
+    </div>
+
+    <div class="debug-section">
+        <h3>API测试</h3>
+        <button onclick="testAPI()">测试新闻API</button>
+        <div class="result" id="apiResult"></div>
+    </div>
+
+    <script>
+        // 模拟parseUrlParams函数
+        const parseUrlParams = (searchString) => {
+            try {
+                // 处理双重编码的问题
+                let searchStr = searchString;
+                if (searchStr.includes('%3F')) {
+                    searchStr = decodeURIComponent(searchStr);
+                }
+                
+                const searchParams = new URLSearchParams(searchStr);
+                const urlFilters = {
+                    keyword: searchParams.get('keyword') || '',
+                    category: searchParams.get('category') || '',
+                    source: searchParams.get('source') || '',
+                    isRead: searchParams.get('isRead') || '',
+                    isFavorite: searchParams.get('isFavorite') || '',
+                    isIgnored: searchParams.get('isIgnored') || ''
+                };
+                const page = parseInt(searchParams.get('page')) || 1;
+                return { filters: urlFilters, page };
+            } catch (error) {
+                console.error('解析URL参数失败:', error);
+                return { 
+                    filters: {
+                        keyword: '',
+                        category: '',
+                        source: '',
+                        isRead: '',
+                        isFavorite: '',
+                        isIgnored: ''
+                    }, 
+                    page: 1 
+                };
+            }
+        };
+
+        // 显示当前页面信息
+        function showCurrentInfo() {
+            document.getElementById('fullUrl').textContent = window.location.href;
+            document.getElementById('searchPart').textContent = window.location.search;
+            document.getElementById('pathname').textContent = window.location.pathname;
+            
+            const result = parseUrlParams(window.location.search);
+            document.getElementById('parseResult').innerHTML = `
+                <strong>解析结果:</strong><br>
+                <pre>${JSON.stringify(result, null, 2)}</pre>
+            `;
+        }
+
+        // 测试不同URL格式
+        function testUrl(testSearch) {
+            const result = parseUrlParams(testSearch);
+            document.getElementById('parseResult').innerHTML = `
+                <strong>测试URL:</strong> ${testSearch}<br>
+                <strong>解析结果:</strong><br>
+                <pre>${JSON.stringify(result, null, 2)}</pre>
+            `;
+        }
+
+        // 测试API
+        async function testAPI() {
+            const apiResult = document.getElementById('apiResult');
+            apiResult.innerHTML = '正在测试API...';
+            
+            try {
+                const response = await fetch('/api/news?category=科技媒体&page=1&limit=5');
+                const data = await response.json();
+                
+                if (data.success) {
+                    apiResult.innerHTML = `
+                        <div class="success">
+                            <strong>API测试成功!</strong><br>
+                            新闻数量: ${data.data.news.length}<br>
+                            总数: ${data.data.pagination.total}<br>
+                            第一条新闻: ${data.data.news[0]?.title?.substring(0, 50)}...
+                        </div>
+                    `;
+                } else {
+                    apiResult.innerHTML = `
+                        <div class="error">
+                            <strong>API测试失败!</strong><br>
+                            错误: ${data.message}
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                apiResult.innerHTML = `
+                    <div class="error">
+                        <strong>API测试失败!</strong><br>
+                        错误: ${error.message}
+                    </div>
+                `;
+            }
+        }
+
+        // 页面加载时显示信息
+        window.onload = showCurrentInfo;
+    </script>
+</body>
+</html> 
