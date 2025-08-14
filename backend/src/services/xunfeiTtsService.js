@@ -402,11 +402,11 @@ class XunfeiTtsService {
         const tempPath = `${outputPath}_temp_${Date.now()}_${i}.pcm`;
         
         try {
-          // 生成单个音频
+          // 生成单个音频，只使用对话内容，不包含说话者名称
           const result = await this.generateTTS({
             ...config,
             voice: voice
-          }, `${round.speaker}：${round.text}`, tempPath);
+          }, round.text, tempPath);
           
           // 读取音频数据
           const audioData = fs.readFileSync(tempPath);

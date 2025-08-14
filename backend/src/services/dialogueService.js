@@ -500,10 +500,8 @@ ${newsDetails}
         filteredRounds = dialogueContent.rounds;
       }
       
-      // 将过滤后的对话内容转换为音频文本
-      const audioText = filteredRounds.map(round => 
-        `${round.speaker}：${round.text}`
-      ).join('\n\n');
+      // 将过滤后的对话内容转换为音频文本，只保留对话内容，不包含说话者名称
+      const audioText = filteredRounds.map(round => round.text).join('\n\n');
 
       // 生成文件名
       const timestamp = Date.now();
@@ -706,10 +704,10 @@ ${newsDetails}
         
         logger.info(`为 ${round.speaker} 生成音频，使用发音人: ${voice}`);
 
-        // 调用TTS API生成单个音频
+        // 调用TTS API生成单个音频，只使用对话内容，不包含说话者名称
         const response = await axios.post(ttsServiceConfig.apiUrl, {
           model: 'tts-1',
-          input: `${round.speaker}：${round.text}`,
+          input: round.text,
           voice: voice,
           response_format: 'mp3',
           speed: ttsConfig.speed.openai

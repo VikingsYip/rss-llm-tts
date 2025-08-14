@@ -97,9 +97,38 @@ function setupMemoryMonitoring() {
     
     logger.info(`内存使用情况: ${heapUsedMB}MB / ${heapTotalMB}MB (${Math.round(heapUsagePercent)}%)`);
     
-    // 如果堆内存使用率超过90%，记录警告
+    // 如果堆内存使用率超过90%，记录警告并自动清理内存
     if (heapUsagePercent > 90) {
       logger.warn(`内存使用率过高: ${Math.round(heapUsagePercent)}%，建议重启应用`);
+      
+      // 自动执行内存清理
+      logger.info('开始执行自动内存清理...');
+      try {
+        // 强制垃圾回收
+        if (typeof global.gc === 'function') {
+          const beforeGC = process.memoryUsage();
+          global.gc();
+          const afterGC = process.memoryUsage();
+          const freedMB = Math.round((beforeGC.heapUsed - afterGC.heapUsed) / 1024 / 1024);
+          logger.info(`垃圾回收完成，释放内存: ${freedMB}MB`);
+        } else {
+          logger.warn('垃圾回收不可用，请启用 --expose-gc 参数');
+        }
+        
+        // 清理模块缓存（仅在开发环境）
+        if (process.env.NODE_ENV === 'development') {
+          const modulesBefore = Object.keys(require.cache).length;
+          Object.keys(require.cache).forEach(key => {
+            if (key.includes('node_modules')) {
+              delete require.cache[key];
+            }
+          });
+          const modulesAfter = Object.keys(require.cache).length;
+          logger.info(`清理模块缓存: ${modulesBefore - modulesAfter} 个模块`);
+        }
+      } catch (error) {
+        logger.error('自动内存清理失败:', error);
+      }
       
       // 在开发环境下，如果内存使用率超过95%，自动重启
       if (process.env.NODE_ENV === 'development' && heapUsagePercent > 95) {

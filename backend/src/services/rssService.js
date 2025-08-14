@@ -1,6 +1,7 @@
 const Parser = require('rss-parser');
 const axios = require('axios');
 const cheerio = require('cheerio');
+const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 const moment = require('moment');
 const logger = require('../utils/logger');
@@ -241,9 +242,12 @@ class RssService {
 
     for (const item of items) {
       try {
+        // 生成处理后的guid
+        const processedGuid = this.processGuid(item.guid, item.link);
+        
         // 检查是否已存在
         const existing = await News.findOne({
-          where: { guid: item.guid || item.link }
+          where: { guid: processedGuid }
         });
 
         if (existing) continue;
@@ -286,7 +290,7 @@ class RssService {
           sourceName: feed.name,
           category: feed.category,
           rssFeedId: feed.id,
-          guid: item.guid || item.link || uuidv4()
+          guid: processedGuid
         });
 
         newCount++;
@@ -677,6 +681,38 @@ class RssService {
       logger.error(`获取RSS源失败: ${feedId}`, error);
       return null;
     }
+  }
+
+  // 处理guid字段，确保不超过数据库字段长度限制
+  processGuid(rawGuid, fallbackUrl) {
+    const MAX_GUID_LENGTH = 255;
+    
+    // 优先使用原始guid
+    if (rawGuid && rawGuid.length <= MAX_GUID_LENGTH) {
+      return rawGuid;
+    }
+    
+    // 如果guid过长，使用hash处理
+    if (rawGuid && rawGuid.length > MAX_GUID_LENGTH) {
+      const hash = crypto.createHash('sha256').update(rawGuid).digest('hex');
+      logger.debug(`GUID过长，使用hash: ${rawGuid.substring(0, 50)}... -> ${hash}`);
+      return hash;
+    }
+    
+    // 如果没有guid，尝试使用URL
+    if (fallbackUrl) {
+      if (fallbackUrl.length <= MAX_GUID_LENGTH) {
+        return fallbackUrl;
+      } else {
+        // URL也过长，使用hash处理
+        const hash = crypto.createHash('sha256').update(fallbackUrl).digest('hex');
+        logger.debug(`URL过长作为GUID，使用hash: ${fallbackUrl.substring(0, 50)}... -> ${hash}`);
+        return hash;
+      }
+    }
+    
+    // 最后的备选方案，生成UUID
+    return uuidv4();
   }
 }
 
