@@ -2,7 +2,7 @@
 
 一个基于Node.js和React的智能新闻聚合系统，支持RSS源管理、AI对话生成和语音合成。
 
-![dashboard](.\dashboard.jpg)
+![dashboard](./dashboard.jpg)
 
 ## 功能特性
 
