@@ -54,24 +54,34 @@ class RSSFetchJob {
         return;
       }
 
-      // 计算执行间隔（分钟）
-      const intervalMinutes = Math.max(1, Math.floor(feed.fetchInterval / 60000));
-      
-      // 创建cron表达式（每分钟执行一次，但内部会检查是否需要抓取）
-      const cronExpression = `*/${intervalMinutes} * * * *`;
-      
+      // 根据分类设置不同的抓取间隔
+      const techCategories = ['科技', '技术', 'Tech', 'technology', 'AI', '互联网', '移动互联网'];
+      const isTechCategory = techCategories.some(cat =>
+        feed.category && feed.category.toLowerCase().includes(cat.toLowerCase())
+      );
+
+      // 科技类30分钟，其他类24小时
+      const intervalMinutes = isTechCategory ? 30 : 1440;
+
+      // 使用固定间隔（分钟）
+      const cronExpression = isTechCategory
+        ? '*/30 * * * *'  // 每30分钟
+        : '0 3 * * *';     // 每天凌晨3点
+
+      logger.info(`RSS源分类: ${feed.category}, 设置抓取间隔: ${isTechCategory ? '30分钟' : '每天凌晨3点'}`);
+
       const job = cron.schedule(cronExpression, async () => {
         try {
           // 检查是否需要抓取
           if (await this.shouldFetchFeed(feed)) {
             logger.info(`开始抓取RSS源: ${feed.name}`);
-            
+
             // 记录内存使用情况
             const memUsage = process.memoryUsage();
             logger.debug(`抓取前内存使用: ${Math.round(memUsage.heapUsed / 1024 / 1024)}MB`);
-            
+
             await rssService.fetchFeed(feed.id);
-            
+
             // 强制垃圾回收（仅在开发环境）
             if (process.env.NODE_ENV === 'development') {
               if (global.gc) {
@@ -79,11 +89,11 @@ class RSSFetchJob {
                 logger.debug('执行垃圾回收');
               }
             }
-            
+
             // 记录抓取后内存使用
             const memUsageAfter = process.memoryUsage();
             logger.debug(`抓取后内存使用: ${Math.round(memUsageAfter.heapUsed / 1024 / 1024)}MB`);
-            
+
             logger.info(`RSS源抓取完成: ${feed.name}`);
           }
         } catch (error) {
@@ -93,7 +103,7 @@ class RSSFetchJob {
             code: error.code,
             stack: error.stack?.substring(0, 500) // 限制堆栈跟踪长度
           });
-          
+
           // 如果是503错误，增加延迟重试
           if (error.status === 503 || (error.response && error.response.status === 503)) {
             logger.warn(`RSS服务不可用，将在下次调度时重试: ${feed.name}`);

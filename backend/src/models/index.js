@@ -18,9 +18,10 @@ News.belongsTo(RssFeed, {
 // 同步数据库
 const syncDatabase = async () => {
   try {
-    await sequelize.sync({ alter: true });
+    // 仅创建/更新表结构，不修改索引（避免 Too many keys 错误）
+    await sequelize.sync({ alter: false });
     console.log('数据库同步完成');
-    
+
     // 初始化默认配置
     await initializeDefaultConfigs();
   } catch (error) {
