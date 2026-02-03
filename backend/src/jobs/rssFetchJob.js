@@ -160,7 +160,10 @@ class RSSFetchJob {
   }
 
   // 启动清理任务（每天凌晨2点执行）
+  // 已禁用：不再自动清理历史新闻
   startCleanupJob() {
+    logger.info('新闻自动清理任务已禁用，新闻将永久保留');
+    /*
     const job = cron.schedule('0 2 * * *', async () => {
       try {
         logger.info('开始清理过期新闻...');
@@ -172,11 +175,10 @@ class RSSFetchJob {
     }, {
       scheduled: false
     });
-
     job.start();
     this.jobs.set('cleanup', job);
-    
     logger.info('清理任务已启动（每天凌晨2点执行）');
+    */
   }
 
   // 手动触发RSS源抓取

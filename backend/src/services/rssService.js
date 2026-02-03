@@ -255,14 +255,15 @@ class RssService {
   // 处理RSS条目
   async processFeedItems(items, feed) {
     let newCount = 0;
-    const retentionHours = await this.getConfigValue('news_retention_hours', 24);
-    const cutoffTime = moment().subtract(retentionHours, 'hours').toDate();
+    // 已禁用过期过滤：所有新闻都将被保留
+    // const retentionHours = await this.getConfigValue('news_retention_hours', 24);
+    // const cutoffTime = moment().subtract(retentionHours, 'hours').toDate();
 
     for (const item of items) {
       try {
         // 生成处理后的guid
         const processedGuid = this.processGuid(item.guid, item.link);
-        
+
         // 检查是否已存在
         const existing = await News.findOne({
           where: { guid: processedGuid }
@@ -278,8 +279,8 @@ class RssService {
           publishedAt = new Date(item.isoDate);
         }
 
-        // 过滤过期新闻
-        if (publishedAt < cutoffTime) continue;
+        // 已禁用：不再过滤过期新闻
+        // if (publishedAt < cutoffTime) continue;
 
         // 提取内容
         let content = item.content || item['content:encoded'] || item.description || '';
@@ -416,12 +417,15 @@ class RssService {
     }
   }
 
-  // 清理过期新闻
+  // 清理过期新闻 - 已禁用
   async cleanupOldNews() {
+    logger.info('cleanupOldNews 已禁用，新闻将永久保留');
+    return 0;
+    /*
     try {
       const retentionHours = await this.getConfigValue('news_retention_hours', 24);
       const cutoffTime = moment().subtract(retentionHours, 'hours').toDate();
-      
+
       const deletedCount = await News.destroy({
         where: {
           publishedAt: {
@@ -429,13 +433,14 @@ class RssService {
           }
         }
       });
-      
+
       logger.info(`清理过期新闻: ${deletedCount}条`);
       return deletedCount;
     } catch (error) {
       logger.error('清理过期新闻失败:', error);
       throw error;
     }
+    */
   }
 
   // 删除RSS源
