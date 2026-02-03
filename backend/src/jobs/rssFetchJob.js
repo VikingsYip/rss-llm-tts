@@ -62,6 +62,10 @@ class RSSFetchJob {
 
       // 科技类30分钟，其他类24小时
       const intervalMinutes = isTechCategory ? 30 : 1440;
+      const fetchInterval = isTechCategory ? 30 * 60 * 1000 : 24 * 60 * 60 * 1000; // 毫秒
+
+      // 更新数据库中的抓取间隔
+      await feed.update({ fetchInterval });
 
       // 使用固定间隔（分钟）
       const cronExpression = isTechCategory
