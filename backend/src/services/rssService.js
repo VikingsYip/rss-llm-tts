@@ -84,24 +84,24 @@ class RssService {
       const proxyConfig = await this.getProxyConfig();
       
       const axiosConfig = {
-        timeout: 10000, // 减少超时时间到10秒
+        timeout: 8000, // 减少超时时间
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-          'Connection': 'close' // 强制关闭连接
+          'Connection': 'close'
         },
-        maxContentLength: 5 * 1024 * 1024, // 限制响应大小为5MB
-        maxBodyLength: 5 * 1024 * 1024,
-        maxRedirects: 3,
-        // 强制关闭连接池
-        httpAgent: new (require('http').Agent)({ 
+        maxContentLength: 2 * 1024 * 1024, // 限制响应大小为2MB
+        maxBodyLength: 2 * 1024 * 1024,
+        maxRedirects: 2,
+        // 强制关闭连接池，减少并发连接
+        httpAgent: new (require('http').Agent)({
           keepAlive: false,
-          maxSockets: 5,
-          timeout: 10000
+          maxSockets: 2,
+          timeout: 8000
         }),
-        httpsAgent: new (require('https').Agent)({ 
+        httpsAgent: new (require('https').Agent)({
           keepAlive: false,
-          maxSockets: 5,
-          timeout: 10000,
+          maxSockets: 2,
+          timeout: 8000,
           rejectUnauthorized: false
         })
       };
@@ -215,17 +215,35 @@ class RssService {
         return;
       }
 
+      // 内存检查：如果堆内存使用超过80%，跳过抓取
+      const memUsage = process.memoryUsage();
+      const heapUsedMB = Math.round(memUsage.heapUsed / 1024 / 1024);
+      const heapTotalMB = Math.round(memUsage.heapTotal / 1024 / 1024);
+      const heapUsagePercent = (heapUsedMB / heapTotalMB) * 100;
+
+      if (heapUsagePercent > 80) {
+        logger.warn(`内存使用率过高 (${Math.round(heapUsagePercent)}%)，跳过RSS抓取: ${feed.name}`);
+        return 0;
+      }
+
       // 使用代理获取RSS内容
       const rssContent = await this.fetchRssWithProxy(feed.url);
-      
+
       // 解析RSS内容
       const rssData = await this.parser.parseString(rssContent);
-      
-      const newsCount = await this.processFeedItems(rssData.items, feed);
-      
+
+      // 限制处理的项目数量，避免内存溢出
+      const maxNewsPerFeed = await this.getConfigValue('max_news_per_feed', 20);
+      const limitedItems = rssData.items.slice(0, maxNewsPerFeed);
+
+      const newsCount = await this.processFeedItems(limitedItems, feed);
+
+      // 及时释放解析后的数据引用
+      rssData.items = null;
+
       // 更新最后抓取时间
       await feed.update({ lastFetchTime: new Date() });
-      
+
       logger.info(`RSS源抓取完成: ${feed.name}, 新增新闻: ${newsCount}条`);
       return newsCount;
     } catch (error) {
@@ -307,53 +325,65 @@ class RssService {
     try {
       // 获取代理配置
       const proxyConfig = await this.getProxyConfig();
-      
+
       const axiosConfig = {
-        timeout: 10000,
+        timeout: 5000,
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
+        },
+        maxContentLength: 1 * 1024 * 1024, // 限制为1MB
+        maxBodyLength: 1 * 1024 * 1024
       };
 
       // 如果启用了代理，添加代理配置
       if (proxyConfig) {
         axiosConfig.proxy = proxyConfig;
-        logger.info(`使用代理获取内容: ${url}, 代理: ${proxyConfig.host}:${proxyConfig.port}`);
+        logger.debug(`使用代理获取内容: ${url}`);
       }
 
       const response = await axios.get(url, axiosConfig);
 
-      const $ = cheerio.load(response.data);
-      
-      // 移除脚本和样式
-      $('script, style').remove();
-      
-      // 尝试找到主要内容
-      const selectors = [
-        'article',
-        '.article-content',
-        '.post-content',
-        '.entry-content',
-        '.content',
-        'main',
-        '.main-content'
-      ];
+      const $ = cheerio.load(response.data, {
+        lowerCaseTags: true,
+        lowerCaseAttributes: true
+      });
 
-      let content = '';
-      for (const selector of selectors) {
-        const element = $(selector);
-        if (element.length > 0) {
-          content = element.text().trim();
-          if (content.length > 100) break;
+      try {
+        // 移除脚本和样式，释放DOM节点
+        $('script, style, nav, footer, aside, iframe, form').remove();
+
+        // 尝试找到主要内容
+        const selectors = [
+          'article',
+          '.article-content',
+          '.post-content',
+          '.entry-content',
+          '.content',
+          'main',
+          '.main-content'
+        ];
+
+        let content = '';
+        for (const selector of selectors) {
+          const element = $(selector);
+          if (element.length > 0) {
+            content = element.text().trim();
+            if (content.length > 100) break;
+          }
         }
-      }
 
-      // 如果没找到，使用body内容
-      if (!content) {
-        content = $('body').text().trim();
-      }
+        // 如果没找到，使用body内容
+        if (!content) {
+          content = $('body').text().trim();
+        }
 
-      return content.substring(0, 5000); // 限制长度
+        // 限制长度，减少内存占用
+        return content.substring(0, 3000);
+      } finally {
+        // 清理cheerio DOM，释放内存
+        $('*').remove();
+        $.root().remove();
+      }
     } catch (error) {
       logger.warn(`获取完整内容失败: ${url}`, error);
       return null;

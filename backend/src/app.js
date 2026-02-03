@@ -94,17 +94,17 @@ function setupMemoryMonitoring() {
     const heapUsedMB = Math.round(memUsage.heapUsed / 1024 / 1024);
     const heapTotalMB = Math.round(memUsage.heapTotal / 1024 / 1024);
     const heapUsagePercent = (heapUsedMB / heapTotalMB) * 100;
-    
+
     logger.info(`内存使用情况: ${heapUsedMB}MB / ${heapTotalMB}MB (${Math.round(heapUsagePercent)}%)`);
-    
-    // 如果堆内存使用率超过90%，记录警告并自动清理内存
-    if (heapUsagePercent > 90) {
+
+    // 如果堆内存使用率超过80%，记录警告并自动清理内存
+    if (heapUsagePercent > 80) {
       logger.warn(`内存使用率过高: ${Math.round(heapUsagePercent)}%，建议重启应用`);
-      
+
       // 自动执行内存清理
       logger.info('开始执行自动内存清理...');
       try {
-        // 强制垃圾回收
+        // 强制垃圾回收（开发环境始终执行，生产环境超过85%时执行）
         if (typeof global.gc === 'function') {
           const beforeGC = process.memoryUsage();
           global.gc();
@@ -114,7 +114,7 @@ function setupMemoryMonitoring() {
         } else {
           logger.warn('垃圾回收不可用，请启用 --expose-gc 参数');
         }
-        
+
         // 清理模块缓存（仅在开发环境）
         if (process.env.NODE_ENV === 'development') {
           const modulesBefore = Object.keys(require.cache).length;
@@ -129,16 +129,33 @@ function setupMemoryMonitoring() {
       } catch (error) {
         logger.error('自动内存清理失败:', error);
       }
-      
-      // 在开发环境下，如果内存使用率超过95%，自动重启
-      if (process.env.NODE_ENV === 'development' && heapUsagePercent > 95) {
+
+      // 如果内存使用率超过95%，自动重启（生产环境也执行）
+      if (heapUsagePercent > 95) {
         logger.error('内存使用率过高，准备重启应用...');
         setTimeout(() => {
-          process.exit(1); // 退出进程，让nodemon重启
+          process.exit(1);
         }, 5000);
       }
     }
   }, 5 * 60 * 1000); // 5分钟
+
+  // 预防性垃圾回收：每30分钟执行一次（如果GC可用）
+  if (typeof global.gc === 'function') {
+    setInterval(() => {
+      const memUsage = process.memoryUsage();
+      const heapUsedMB = Math.round(memUsage.heapUsed / 1024 / 1024);
+
+      // 如果堆内存使用超过1.5GB，执行预防性GC
+      if (heapUsedMB > 1500) {
+        logger.info(`预防性内存清理: 当前使用 ${heapUsedMB}MB`);
+        global.gc();
+        const afterGC = process.memoryUsage();
+        const afterMB = Math.round(afterGC.heapUsed / 1024 / 1024);
+        logger.info(`预防性GC完成，释放到 ${afterMB}MB`);
+      }
+    }, 30 * 60 * 1000); // 30分钟
+  }
   
   // 监听未捕获的异常
   process.on('uncaughtException', (error) => {
