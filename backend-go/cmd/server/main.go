@@ -44,9 +44,9 @@ func main() {
 	defer database.CloseDB()
 
 	// 初始化服务
-	rssService := services.NewRssService(db, cfg)
-	newsService := services.NewNewsService(db)
 	configService := services.NewConfigService(db, cfg)
+	newsService := services.NewNewsService(db)
+	rssService := services.NewRssService(db, cfg, configService)
 	// 获取配置供各服务使用
 	appConfigs, _ := configService.GetAllConfigs()
 	llmService := services.NewLLMService(db, cfg, appConfigs)
@@ -143,6 +143,7 @@ func main() {
 			config.DELETE("/:key", configHandler.DeleteConfig)
 			config.POST("/test/llm", configHandler.TestLLM)
 			config.POST("/test/tts", configHandler.TestTTS)
+			config.POST("/test/proxy", configHandler.TestProxy)
 		}
 	}
 

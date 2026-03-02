@@ -2,6 +2,10 @@ package services
 
 import (
 	"fmt"
+	"net/http"
+	"net/url"
+	"strconv"
+	"time"
 
 	"github.com/raciel/rss-llm-tts/internal/config"
 	"github.com/raciel/rss-llm-tts/internal/models"
@@ -195,4 +199,68 @@ func (s *ConfigService) TestTTS() (map[string]interface{}, error) {
 		"success": true,
 		"message": "TTS连接测试成功",
 	}, nil
+}
+
+// TestProxy 测试代理连接
+func (s *ConfigService) TestProxy(proxyUrl, httpsProxy, noProxy string) (map[string]interface{}, error) {
+	startTime := time.Now()
+
+	// 创建一个简单的 HTTP 客户端，使用代理
+	transport := &http.Transport{}
+
+	// 设置 HTTP 代理
+	if proxyUrl != "" {
+		proxyURL, err := url.Parse(proxyUrl)
+		if err != nil {
+			return map[string]interface{}{
+				"success": false,
+				"message": "代理地址格式不正确: " + err.Error(),
+			}, nil
+		}
+		transport.Proxy = http.ProxyURL(proxyURL)
+	}
+
+	client := &http.Client{
+		Transport: transport,
+		Timeout:   10 * time.Second,
+	}
+
+	// 测试访问一个常用的外部网站（使用 http 而不是 https 来简化测试）
+	testURL := "http://www.google.com/generate_204"
+
+	req, err := http.NewRequest("GET", testURL, nil)
+	if err != nil {
+		return map[string]interface{}{
+			"success": false,
+			"message": "创建请求失败: " + err.Error(),
+		}, nil
+	}
+
+	// 添加常见的请求头
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return map[string]interface{}{
+			"success": false,
+			"message": "代理连接失败: " + err.Error(),
+		}, nil
+	}
+	defer resp.Body.Close()
+
+	responseTime := int(time.Since(startTime).Milliseconds())
+
+	if resp.StatusCode >= 200 && resp.StatusCode < 400 {
+		return map[string]interface{}{
+			"success":      true,
+			"message":      "代理连接成功",
+			"responseTime": responseTime,
+		}, nil
+	} else {
+		return map[string]interface{}{
+			"success":      false,
+			"message":      "代理连接异常，状态码: " + strconv.Itoa(resp.StatusCode),
+			"responseTime": responseTime,
+		}, nil
+	}
 }

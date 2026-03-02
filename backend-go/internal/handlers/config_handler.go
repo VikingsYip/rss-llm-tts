@@ -163,3 +163,25 @@ func (h *ConfigHandler) TestTTS(c *gin.Context) {
 
 	Success(c, result)
 }
+
+// TestProxy 测试代理连接
+func (h *ConfigHandler) TestProxy(c *gin.Context) {
+	var input struct {
+		ProxyUrl  string `json:"proxyUrl" binding:"required"`
+		HttpsProxy string `json:"httpsProxy"`
+		NoProxy   string `json:"noProxy"`
+	}
+
+	if err := c.ShouldBindJSON(&input); err != nil {
+		Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	result, err := h.configService.TestProxy(input.ProxyUrl, input.HttpsProxy, input.NoProxy)
+	if err != nil {
+		Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	Success(c, result)
+}

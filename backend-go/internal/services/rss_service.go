@@ -26,14 +26,16 @@ import (
 )
 
 type RssService struct {
-	db     *gorm.DB
-	config *config.Config
+	db          *gorm.DB
+	config      *config.Config
+	configSvc   *ConfigService // 用于从数据库读取最新配置
 }
 
-func NewRssService(db *gorm.DB, cfg *config.Config) *RssService {
+func NewRssService(db *gorm.DB, cfg *config.Config, configSvc *ConfigService) *RssService {
 	return &RssService{
-		db:     db,
-		config: cfg,
+		db:        db,
+		config:    cfg,
+		configSvc: configSvc,
 	}
 }
 
@@ -73,7 +75,7 @@ func (s *RssService) FetchAllFeeds() (int, error) {
 
 			count, err := s.FetchFeed(feed.ID)
 			if err != nil {
-				log.Error().Err(err).Uint("feed_id", feed.ID).Msg("抓取RSS源失败")
+				log.Warn().Err(err).Uint("feed_id", feed.ID).Msg("抓取RSS源失败")
 				return
 			}
 			mu.Lock()
@@ -140,6 +142,9 @@ func (s *RssService) FetchFeed(feedID uint) (int, error) {
 		var existing models.News
 		if err := s.db.Where("guid = ?", processedGuid).First(&existing).Error; err == nil {
 			continue
+		} else if err != gorm.ErrRecordNotFound {
+			// 仅记录非"记录不存在"错误
+			log.Warn().Err(err).Str("guid", processedGuid).Msg("检查新闻是否存在时出错")
 		}
 
 		// 解析发布时间
@@ -166,11 +171,11 @@ func (s *RssService) FetchFeed(feedID uint) (int, error) {
 			}
 		}
 
-		// 创建新闻记录
+		// 创建新闻记录（清理无效字符，使用替换符）
 		news := models.News{
-			Title:       s.truncateString(item.Title, 500),
-			Content:     s.truncateString(content, 50000),
-			Summary:     s.truncateString(summary, 2000),
+			Title:       s.truncateString(strings.ToValidUTF8(item.Title, ""), 500),
+			Content:     s.truncateString(strings.ToValidUTF8(content, ""), 50000),
+			Summary:     s.truncateString(strings.ToValidUTF8(summary, ""), 2000),
 			Link:        item.Link,
 			Author:      "",
 			PublishedAt: &publishedAt,
@@ -229,10 +234,27 @@ func (s *RssService) fetchRssContent(feedURL string) (string, error) {
 		ResponseHeaderTimeout: 20 * time.Second,
 	}
 
-	// 设置代理
-	if s.config.Proxy.Enabled && s.config.Proxy.URL != "" {
-		if proxyURL, err := url.Parse(s.config.Proxy.URL); err == nil {
-			transport.Proxy = http.ProxyURL(proxyURL)
+	// 设置代理 - 优先从数据库读取，其次使用配置文件
+	proxyEnabled := s.config.Proxy.Enabled
+	proxyURL := s.config.Proxy.URL
+
+	// 从数据库读取最新的代理配置
+	if s.configSvc != nil {
+		if configs, err := s.configSvc.GetAllConfigs(); err == nil {
+			if val, ok := configs["http_proxy_enabled"]; ok && val == "true" {
+				proxyEnabled = true
+			}
+			if val, ok := configs["http_proxy_url"]; ok && val != "" {
+				proxyURL = val
+			} else if val, ok := configs["http_proxy"]; ok && val != "" {
+				proxyURL = val
+			}
+		}
+	}
+
+	if proxyEnabled && proxyURL != "" {
+		if pURL, err := url.Parse(proxyURL); err == nil {
+			transport.Proxy = http.ProxyURL(pURL)
 		}
 	}
 
@@ -322,10 +344,27 @@ func (s *RssService) fetchFullContent(pageURL string) (string, error) {
 		ResponseHeaderTimeout: 10 * time.Second,
 	}
 
-	// 设置代理
-	if s.config.Proxy.Enabled && s.config.Proxy.URL != "" {
-		if proxyURL, err := url.Parse(s.config.Proxy.URL); err == nil {
-			transport.Proxy = http.ProxyURL(proxyURL)
+	// 设置代理 - 优先从数据库读取，其次使用配置文件
+	proxyEnabled := s.config.Proxy.Enabled
+	proxyURL := s.config.Proxy.URL
+
+	// 从数据库读取最新的代理配置
+	if s.configSvc != nil {
+		if configs, err := s.configSvc.GetAllConfigs(); err == nil {
+			if val, ok := configs["http_proxy_enabled"]; ok && val == "true" {
+				proxyEnabled = true
+			}
+			if val, ok := configs["http_proxy_url"]; ok && val != "" {
+				proxyURL = val
+			} else if val, ok := configs["http_proxy"]; ok && val != "" {
+				proxyURL = val
+			}
+		}
+	}
+
+	if proxyEnabled && proxyURL != "" {
+		if pURL, err := url.Parse(proxyURL); err == nil {
+			transport.Proxy = http.ProxyURL(pURL)
 		}
 	}
 
@@ -419,6 +458,21 @@ func (s *RssService) truncateString(str string, maxLen int) string {
 		return str
 	}
 	return str[:maxLen]
+}
+
+// cleanInvalidUTF8 清理无效的UTF-8字符（兼容MySQL utf8mb3）
+func (s *RssService) cleanInvalidUTF8(str string) string {
+	// 使用 runes 来处理并过滤无效字符
+	runes := []rune(str)
+	validRunes := make([]rune, 0, len(runes))
+	for _, r := range runes {
+		// 过滤掉替换字符和超出3字节UTF-8范围的字符（4字节emoji等）
+		// UTF-8: 1字节 0-127, 2字节 128-2047, 3字节 2048-65535, 4字节 65536+
+		if r != 0xFFFD && r > 0 && r < 0x10000 {
+			validRunes = append(validRunes, r)
+		}
+	}
+	return string(validRunes)
 }
 
 // isMemoryHigh 检查内存使用率

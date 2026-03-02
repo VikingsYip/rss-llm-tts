@@ -21,7 +21,7 @@ func InitDB(cfg *config.Config) (*gorm.DB, error) {
 
 	// 配置GORM
 	gormConfig := &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Info),
+		Logger: logger.Default.LogMode(logger.Warn),
 		NowFunc: func() time.Time {
 			return time.Now().Local()
 		},
