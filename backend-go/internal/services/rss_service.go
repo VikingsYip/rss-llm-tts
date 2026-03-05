@@ -138,13 +138,15 @@ func (s *RssService) FetchFeed(feedID uint) (int, error) {
 	for _, item := range items {
 		processedGuid := s.processGuid(item.GUID, item.Link)
 
-		// 检查是否已存在
+		// 检查是否已存在 - 使用 Find 代替 First 避免 GORM 打印 record not found 警告
 		var existing models.News
-		if err := s.db.Where("guid = ?", processedGuid).First(&existing).Error; err == nil {
+		result := s.db.Where("guid = ?", processedGuid).Find(&existing)
+		if result.RowsAffected > 0 {
 			continue
-		} else if err != gorm.ErrRecordNotFound {
+		}
+		if result.Error != nil && result.Error != gorm.ErrRecordNotFound {
 			// 仅记录非"记录不存在"错误
-			log.Warn().Err(err).Str("guid", processedGuid).Msg("检查新闻是否存在时出错")
+			log.Warn().Err(result.Error).Str("guid", processedGuid).Msg("检查新闻是否存在时出错")
 		}
 
 		// 解析发布时间
@@ -497,7 +499,9 @@ func (s *RssService) isMemoryHigh() bool {
 // 参数:
 //   - sortBy: 排序字段 (createdAt, name, category, lastFetchTime, isActive, articleCount)
 //   - sortOrder: 排序方向 (ASC, DESC)
-func (s *RssService) GetAllFeeds(sortBy, sortOrder string) ([]models.RssFeed, error) {
+//   - search: 搜索关键词（搜索名称和URL）
+//   - category: 分类筛选
+func (s *RssService) GetAllFeeds(sortBy, sortOrder, search, category string) ([]models.RssFeed, error) {
 	// 校验排序字段（白名单，防止 SQL 注入）
 	validSortFields := map[string]bool{
 		"createdAt":      true,
@@ -517,11 +521,23 @@ func (s *RssService) GetAllFeeds(sortBy, sortOrder string) ([]models.RssFeed, er
 	}
 
 	var feeds []models.RssFeed
+	query := s.db.Model(&models.RssFeed{})
+
+	// 添加搜索条件
+	if search != "" {
+		like := "%" + search + "%"
+		query = query.Where("name LIKE ? OR url LIKE ?", like, like)
+	}
+
+	// 添加分类筛选
+	if category != "" {
+		query = query.Where("category = ?", category)
+	}
 
 	// articleCount 需要通过子查询实现排序
 	if sortBy == "articleCount" {
 		// 先获取所有 feeds
-		err := s.db.Find(&feeds).Error
+		err := query.Find(&feeds).Error
 		if err != nil {
 			return feeds, err
 		}
@@ -545,7 +561,7 @@ func (s *RssService) GetAllFeeds(sortBy, sortOrder string) ([]models.RssFeed, er
 		}
 	} else {
 		// 普通字段直接排序
-		err := s.db.Order(sortBy + " " + sortOrder).Find(&feeds).Error
+		err := query.Order(sortBy + " " + sortOrder).Find(&feeds).Error
 		if err != nil {
 			return feeds, err
 		}

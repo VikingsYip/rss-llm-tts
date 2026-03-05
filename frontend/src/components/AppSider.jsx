@@ -8,6 +8,7 @@ import {
   MessageOutlined,
   SettingOutlined,
   BarChartOutlined,
+  ScheduleOutlined,
 } from '@ant-design/icons';
 
 const { Sider } = Layout;
@@ -31,6 +32,11 @@ const AppSider = ({ collapsed, isMobile, onClose }) => {
       key: '/feeds',
       icon: <LinkOutlined />,
       label: 'RSS源管理',
+    },
+    {
+      key: '/jobs',
+      icon: <ScheduleOutlined />,
+      label: '任务调度',
     },
     {
       key: '/category-stats',

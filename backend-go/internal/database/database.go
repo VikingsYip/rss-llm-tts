@@ -43,6 +43,11 @@ func InitDB(cfg *config.Config) (*gorm.DB, error) {
 	sqlDB.SetMaxIdleConns(2)
 	sqlDB.SetConnMaxLifetime(time.Hour)
 
+	// 自动迁移数据库表
+	if err := autoMigrate(DB); err != nil {
+		log.Warn().Err(err).Msg("数据库表迁移失败")
+	}
+
 	// 迁移 news 表结构（删除旧的 rss_feed_id 列）
 	if err := MigrateNewsTable(DB); err != nil {
 		log.Warn().Err(err).Msg("news表迁移失败，请手动执行SQL")
@@ -59,6 +64,7 @@ func autoMigrate(db *gorm.DB) error {
 		&models.News{},
 		&models.Dialogue{},
 		&models.Config{},
+		&models.RssJobLog{},
 	)
 }
 

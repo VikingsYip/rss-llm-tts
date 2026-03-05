@@ -11,6 +11,7 @@ import Dialogues from './pages/Dialogues';
 import DialogueDetail from './pages/DialogueDetail';
 import Settings from './pages/Settings';
 import CategoryStats from './pages/CategoryStats';
+import JobScheduler from './pages/JobScheduler';
 import './App.css';
 
 const { Content } = Layout;
@@ -67,6 +68,7 @@ function App() {
               <Route path="/news" element={<NewsList />} />
               <Route path="/news/:id" element={<NewsDetail />} />
               <Route path="/feeds" element={<RssFeeds />} />
+              <Route path="/jobs" element={<JobScheduler />} />
               <Route path="/dialogues" element={<Dialogues />} />
               <Route path="/dialogues/:id" element={<DialogueDetail />} />
               <Route path="/settings" element={<Settings />} />

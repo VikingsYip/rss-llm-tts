@@ -1,31 +1,32 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Card, 
-  Typography, 
-  Table, 
-  Button, 
-  Space, 
-  Tag, 
-  Modal, 
-  Form, 
-  Input, 
-  Upload, 
-  message, 
+import {
+  Card,
+  Typography,
+  Table,
+  Button,
+  Space,
+  Tag,
+  Modal,
+  Form,
+  Input,
+  Upload,
+  message,
   Popconfirm,
   Tooltip,
   Divider,
   Alert,
   Select
 } from 'antd';
-import { 
-  PlusOutlined, 
-  EditOutlined, 
-  DeleteOutlined, 
-  UploadOutlined, 
+import {
+  PlusOutlined,
+  EditOutlined,
+  DeleteOutlined,
+  UploadOutlined,
   SyncOutlined,
   FileTextOutlined,
   DownloadOutlined,
-  FilterOutlined
+  FilterOutlined,
+  SearchOutlined
 } from '@ant-design/icons';
 
 const { Title, Text } = Typography;
@@ -45,6 +46,7 @@ const RssFeeds = () => {
   const [selectedCategory, setSelectedCategory] = useState('');
   const [selectedRowKeys, setSelectedRowKeys] = useState([]);
   const [batchLoading, setBatchLoading] = useState(false);
+  const [searchText, setSearchText] = useState('');
 
   // 预设分类列表
   const categoryList = [
@@ -60,7 +62,7 @@ const RssFeeds = () => {
   const categories = ['官媒新闻', '科技媒体', '财经商业', '国际媒体', '自媒体博客', '社区论坛', '生活文化', '其他'];
 
   // 获取RSS源列表
-  const fetchFeeds = async (sortBy = sortConfig.sortBy, sortOrder = sortConfig.sortOrder, category = selectedCategory) => {
+  const fetchFeeds = async (sortBy = sortConfig.sortBy, sortOrder = sortConfig.sortOrder, category = selectedCategory, search = searchText) => {
     setLoading(true);
     try {
       const params = new URLSearchParams({
@@ -71,6 +73,11 @@ const RssFeeds = () => {
       // 添加分类筛选参数
       if (category) {
         params.append('category', category);
+      }
+
+      // 添加搜索参数
+      if (search) {
+        params.append('search', search);
       }
 
       const response = await fetch(`/api/rss/feeds?${params}`);
@@ -90,6 +97,12 @@ const RssFeeds = () => {
     }
   };
 
+  // 处理搜索
+  const handleSearch = (value) => {
+    setSearchText(value);
+    fetchFeeds(sortConfig.sortBy, sortConfig.sortOrder, selectedCategory, value);
+  };
+
   // 组件加载时获取RSS源列表
   useEffect(() => {
     fetchFeeds();
@@ -100,11 +113,11 @@ const RssFeeds = () => {
     if (selectedCategory === category) {
       // 如果点击的是当前选中的分类，则取消筛选
       setSelectedCategory('');
-      fetchFeeds(sortConfig.sortBy, sortConfig.sortOrder, '');
+      fetchFeeds(sortConfig.sortBy, sortConfig.sortOrder, '', searchText);
     } else {
       // 否则应用新的分类筛选
       setSelectedCategory(category);
-      fetchFeeds(sortConfig.sortBy, sortConfig.sortOrder, category);
+      fetchFeeds(sortConfig.sortBy, sortConfig.sortOrder, category, searchText);
     }
   };
 
@@ -112,7 +125,7 @@ const RssFeeds = () => {
   const handleSort = (sortBy) => {
     const currentSortOrder = sortConfig.sortBy === sortBy ? sortConfig.sortOrder : 'DESC';
     const newSortOrder = currentSortOrder === 'DESC' ? 'ASC' : 'DESC';
-    fetchFeeds(sortBy, newSortOrder, selectedCategory);
+    fetchFeeds(sortBy, newSortOrder, selectedCategory, searchText);
   };
 
   // 批量启用RSS源
@@ -627,6 +640,13 @@ const RssFeeds = () => {
       <Card>
         <div style={{ marginBottom: 16 }}>
           <Space wrap>
+            <Input.Search
+              placeholder="搜索RSS源名称"
+              allowClear
+              enterButton={<SearchOutlined />}
+              onSearch={handleSearch}
+              style={{ width: 250 }}
+            />
             <Text strong>分类筛选：</Text>
             <Button
               type={selectedCategory ? 'default' : 'primary'}
@@ -719,7 +739,7 @@ const RssFeeds = () => {
             // 处理Ant Design Table的排序事件
             if (sorter && sorter.field) {
               const sortOrder = sorter.order === 'ascend' ? 'ASC' : 'DESC';
-              fetchFeeds(sorter.field, sortOrder, selectedCategory);
+              fetchFeeds(sorter.field, sortOrder, selectedCategory, searchText);
             }
           }}
         />

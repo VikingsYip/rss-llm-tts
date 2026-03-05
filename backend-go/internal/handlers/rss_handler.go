@@ -25,11 +25,15 @@ func NewRssHandler(rssSvc *services.RssService, newsSvc *services.NewsService) *
 // 参数:
 //   - sortBy: 排序字段 (createdAt, name, category, lastFetchTime)
 //   - sortOrder: 排序方向 (ASC, DESC)
+//   - search: 搜索关键词（搜索名称和URL）
+//   - category: 分类筛选
 func (h *RssHandler) GetFeeds(c *gin.Context) {
 	sortBy := c.DefaultQuery("sortBy", "createdAt")
 	sortOrder := c.DefaultQuery("sortOrder", "DESC")
+	search := c.Query("search")
+	category := c.Query("category")
 
-	feeds, err := h.rssService.GetAllFeeds(sortBy, sortOrder)
+	feeds, err := h.rssService.GetAllFeeds(sortBy, sortOrder, search, category)
 	if err != nil {
 		Error(c, http.StatusInternalServerError, err.Error())
 		return

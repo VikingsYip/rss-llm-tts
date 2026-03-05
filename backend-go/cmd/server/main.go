@@ -47,6 +47,8 @@ func main() {
 	configService := services.NewConfigService(db, cfg)
 	newsService := services.NewNewsService(db)
 	rssService := services.NewRssService(db, cfg, configService)
+	// 初始化任务日志服务
+	jobLogService := services.NewJobLogService(db)
 	// 获取配置供各服务使用
 	appConfigs, _ := configService.GetAllConfigs()
 	llmService := services.NewLLMService(db, cfg, appConfigs)
@@ -54,7 +56,7 @@ func main() {
 	dialogueService := services.NewDialogueService(db, llmService, ttsService, newsService, configService)
 
 	// 初始化调度器
-	scheduler := services.NewScheduler(rssService)
+	scheduler := services.NewScheduler(rssService, jobLogService)
 	if err := scheduler.Start(); err != nil {
 		log.Error().Err(err).Msg("调度器启动失败")
 	}
@@ -74,6 +76,7 @@ func main() {
 	newsHandler := handlers.NewNewsHandler(newsService)
 	dialogueHandler := handlers.NewDialogueHandler(dialogueService)
 	configHandler := handlers.NewConfigHandler(configService)
+	jobHandler := handlers.NewJobHandler(jobLogService)
 
 	// 健康检查
 	r.GET("/health", func(c *gin.Context) {
@@ -102,6 +105,28 @@ func main() {
 			rss.GET("/jobs/status", func(c *gin.Context) {
 				handlers.Success(c, scheduler.GetStatus())
 			})
+			rss.POST("/jobs/reload", func(c *gin.Context) {
+				if err := scheduler.Reload(); err != nil {
+					handlers.Error(c, 500, err.Error())
+					return
+				}
+				handlers.Success(c, gin.H{"message": "定时任务已重新加载"})
+			})
+			rss.POST("/jobs/trigger/:id", func(c *gin.Context) {
+				idStr := c.Param("id")
+				var id uint
+				fmt.Sscanf(idStr, "%d", &id)
+				if err := scheduler.TriggerManual(id); err != nil {
+					handlers.Error(c, 500, err.Error())
+					return
+				}
+				handlers.Success(c, gin.H{"message": "任务已触发"})
+			})
+			// 任务日志路由
+			rss.GET("/job-logs", jobHandler.GetLogs)
+			rss.GET("/job-logs/:id", jobHandler.GetLogByID)
+			rss.GET("/job-logs/stats", jobHandler.GetStats)
+			rss.GET("/job-logs/running", jobHandler.GetRunningCount)
 			rss.POST("/cleanup", func(c *gin.Context) {
 				count := scheduler.CleanupOldNews()
 				handlers.Success(c, gin.H{"deleted": count})
