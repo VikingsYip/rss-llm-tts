@@ -71,7 +71,7 @@ func (h *NewsHandler) GetNewsDetail(c *gin.Context) {
 	Success(c, news)
 }
 
-// UpdateNewsStatus 更新新闻状态
+// UpdateNewsStatus 更新新闻状态（支持任意字段）
 func (h *NewsHandler) UpdateNewsStatus(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
@@ -79,18 +79,34 @@ func (h *NewsHandler) UpdateNewsStatus(c *gin.Context) {
 		return
 	}
 
-	var input struct {
-		Status string `json:"status" binding:"required"`
-	}
-
+	// 使用 map 接收任意字段
+	var input map[string]interface{}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	if err := h.newsService.UpdateNewsStatus(uint(id), input.Status); err != nil {
-		Error(c, http.StatusInternalServerError, err.Error())
+	if len(input) == 0 {
+		Error(c, http.StatusBadRequest, "没有要更新的字段")
 		return
+	}
+
+	// 遍历输入的字段并更新
+	for field, value := range input {
+		// 只允许更新特定的字段
+		allowedFields := map[string]bool{
+			"isRead":     true,
+			"isFavorite": true,
+			"isIgnored":  true,
+			"status":     true,
+		}
+		if !allowedFields[field] {
+			continue
+		}
+		if err := h.newsService.UpdateNewsField(uint(id), field, value); err != nil {
+			Error(c, http.StatusInternalServerError, err.Error())
+			return
+		}
 	}
 
 	Success(c, gin.H{"message": "更新成功"})
