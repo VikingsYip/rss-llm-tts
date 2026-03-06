@@ -49,6 +49,8 @@ func main() {
 	rssService := services.NewRssService(db, cfg, configService)
 	// 初始化任务日志服务
 	jobLogService := services.NewJobLogService(db)
+	// 初始化微信公众号服务
+	wechatMPService := services.NewWeChatMPService(db)
 	// 获取配置供各服务使用
 	appConfigs, _ := configService.GetAllConfigs()
 	llmService := services.NewLLMService(db, cfg, appConfigs)
@@ -77,6 +79,7 @@ func main() {
 	dialogueHandler := handlers.NewDialogueHandler(dialogueService)
 	configHandler := handlers.NewConfigHandler(configService)
 	jobHandler := handlers.NewJobHandler(jobLogService)
+	wechatMPHandler := handlers.NewWeChatMPHandler(wechatMPService)
 
 	// 健康检查
 	r.GET("/health", func(c *gin.Context) {
@@ -169,6 +172,17 @@ func main() {
 			config.POST("/test/llm", configHandler.TestLLM)
 			config.POST("/test/tts", configHandler.TestTTS)
 			config.POST("/test/proxy", configHandler.TestProxy)
+		}
+
+		// 微信公众号配置
+		wechat := api.Group("/wechat-mp")
+		{
+			wechat.GET("/config", wechatMPHandler.GetConfig)
+			wechat.POST("/config", wechatMPHandler.SaveConfig)
+			wechat.POST("/test", wechatMPHandler.TestSend)
+			wechat.POST("/dialogue/:id/push", wechatMPHandler.PushDialogueToDraft)
+			// 微信服务器验证回调
+			wechat.GET("/callback", wechatMPHandler.VerifyServer)
 		}
 	}
 

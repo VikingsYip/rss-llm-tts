@@ -22,18 +22,19 @@ import {
   Col,
   Pagination
 } from 'antd';
-import { 
-  PlusOutlined, 
-  PlayCircleOutlined, 
-  DownloadOutlined, 
-  DeleteOutlined, 
+import {
+  PlusOutlined,
+  PlayCircleOutlined,
+  DownloadOutlined,
+  DeleteOutlined,
   EyeOutlined,
   ReloadOutlined,
   SyncOutlined,
   SearchOutlined,
-  FileTextOutlined
+  FileTextOutlined,
+  SendOutlined
 } from '@ant-design/icons';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 const { Option } = Select;
 const { Title } = Typography;
@@ -64,19 +65,7 @@ const Dialogues = () => {
     pageSize: 10,
     total: 0
   });
-  
-  // 新闻分类列表
-  const newsCategories = [
-    { value: '', label: '全部分类' },
-    { value: '官媒新闻', label: '官媒新闻' },
-    { value: '科技媒体', label: '科技媒体' },
-    { value: '财经商业', label: '财经商业' },
-    { value: '国际媒体', label: '国际媒体' },
-    { value: '自媒体博客', label: '自媒体博客' },
-    { value: '社区论坛', label: '社区论坛' },
-    { value: '生活文化', label: '生活文化' },
-    { value: '其他', label: '其他' }
-  ];
+  const [newsCategories, setNewsCategories] = useState([{ value: '', label: '全部分类' }]);
 
   // 分类颜色映射
   const categoryColors = {
@@ -90,12 +79,20 @@ const Dialogues = () => {
     '其他': 'default'
   };
 
+  const colorList = ['red', 'blue', 'green', 'purple', 'orange', 'cyan', 'pink', 'volcano', 'geekblue', 'magenta'];
+
   // 获取分类颜色
   const getCategoryColor = (category) => {
-    return categoryColors[category] || 'default';
+    if (categoryColors[category]) {
+      return categoryColors[category];
+    }
+    // 动态生成颜色
+    const hash = category.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    return colorList[hash % colorList.length];
   };
   
   const navigate = useNavigate();
+  const location = useLocation();
 
   const typeMap = {
     interview: { text: '访谈', color: 'blue' },
@@ -114,20 +111,35 @@ const Dialogues = () => {
   const fetchDialogues = async (page = 1, pageSize = 10) => {
     setLoading(true);
     try {
+      // 从URL读取日期筛选参数
+      let startDate = '';
+      let endDate = '';
+      try {
+        const searchParams = new URLSearchParams(location.search);
+        startDate = searchParams.get('startDate') || '';
+        endDate = searchParams.get('endDate') || '';
+      } catch (e) {
+        // 忽略解析错误
+      }
+
       const params = new URLSearchParams({
         page: page.toString(),
         limit: pageSize.toString()
       });
 
+      // 添加日期筛选参数
+      if (startDate) params.set('startDate', startDate);
+      if (endDate) params.set('endDate', endDate);
+
       const response = await fetch(`/api/dialogue?${params}`);
       const data = await response.json();
-      
+
       if (data.success) {
-        setDialogues(data.data);
+        setDialogues(data.data.dialogues);
         setPagination({
-          current: data.pagination.page,
-          pageSize: data.pagination.limit,
-          total: data.pagination.total
+          current: data.data.pagination.page,
+          pageSize: data.data.pagination.limit,
+          total: data.data.pagination.total
         });
       } else {
         message.error('获取对话列表失败');
@@ -175,7 +187,26 @@ const Dialogues = () => {
   // 组件加载时获取对话列表
   useEffect(() => {
     fetchDialogues();
+    // 获取新闻分类
+    fetchCategories();
   }, []);
+
+  // 获取新闻分类
+  const fetchCategories = async () => {
+    try {
+      const response = await fetch('/api/news/categories');
+      const data = await response.json();
+      if (data.success && data.data) {
+        const categories = [
+          { value: '', label: '全部分类' },
+          ...data.data.map(cat => ({ value: cat, label: cat }))
+        ];
+        setNewsCategories(categories);
+      }
+    } catch (error) {
+      console.error('获取分类失败:', error);
+    }
+  };
 
   // 处理新闻搜索
   const handleNewsSearch = (value) => {
@@ -369,6 +400,35 @@ const Dialogues = () => {
     link.click();
   };
 
+  // 推送到微信公众号草稿箱
+  const handlePushToWeChat = async (id) => {
+    Modal.confirm({
+      title: '确认推送',
+      content: '确定要将此对话推送到微信公众号草稿箱吗？',
+      onOk: async () => {
+        try {
+          message.loading('正在推送...', 0);
+          const response = await fetch(`/api/wechat-mp/dialogue/${id}/push`, {
+            method: 'POST',
+          });
+
+          const result = await response.json();
+          message.destroy();
+
+          if (result.success) {
+            message.success(`推送成功，media_id: ${result.data.media_id}`);
+          } else {
+            message.error(`推送失败: ${result.message}`);
+          }
+        } catch (error) {
+          message.destroy();
+          console.error('推送失败:', error);
+          message.error('推送失败');
+        }
+      }
+    });
+  };
+
   // 处理分页变化
   const handleTableChange = (pagination) => {
     fetchDialogues(pagination.current, pagination.pageSize);
@@ -439,7 +499,7 @@ const Dialogues = () => {
     {
       title: '操作',
       key: 'actions',
-      width: 250,
+      width: 300,
       render: (_, record) => (
         <Space>
           <Button 
@@ -462,20 +522,29 @@ const Dialogues = () => {
           )}
           {record.audioFile && record.status === 'completed' && (
             <>
-              <Button 
-                type="link" 
+              <Button
+                type="link"
                 icon={<PlayCircleOutlined />}
                 onClick={() => handlePlayAudio(record.audioFile)}
               >
                 播放
               </Button>
-              <Button 
-                type="link" 
+              <Button
+                type="link"
                 icon={<DownloadOutlined />}
                 onClick={() => handleDownloadAudio(record.audioFile)}
               >
                 下载
               </Button>
+              <Tooltip title="推送到微信公众号草稿箱">
+                <Button
+                  type="link"
+                  icon={<SendOutlined />}
+                  onClick={() => handlePushToWeChat(record.id)}
+                >
+                  推送
+                </Button>
+              </Tooltip>
             </>
           )}
           <Button 

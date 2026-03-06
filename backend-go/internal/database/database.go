@@ -53,6 +53,11 @@ func InitDB(cfg *config.Config) (*gorm.DB, error) {
 		log.Warn().Err(err).Msg("news表迁移失败，请手动执行SQL")
 	}
 
+	// 迁移 news 表字符集为 utf8mb4
+	if err := MigrateNewsCharset(DB); err != nil {
+		log.Warn().Err(err).Msg("news表字符集迁移失败")
+	}
+
 	log.Info().Msg("数据库连接成功")
 	return DB, nil
 }
@@ -65,6 +70,7 @@ func autoMigrate(db *gorm.DB) error {
 		&models.Dialogue{},
 		&models.Config{},
 		&models.RssJobLog{},
+		&models.WeChatMPConfig{},
 	)
 }
 
@@ -95,6 +101,49 @@ func MigrateNewsTable(db *gorm.DB) error {
 		}
 	} else {
 		log.Info().Msg("news 表结构已是最新，无需迁移")
+	}
+
+	return nil
+}
+
+// MigrateNewsCharset 迁移 news 表字符集为 utf8mb4
+func MigrateNewsCharset(db *gorm.DB) error {
+	// 检查当前表的字符集
+	type tableCharset struct {
+		Charset   string
+		Collation string
+	}
+	var result tableCharset
+	db.Raw("SELECT CC.CHARACTER_SET_NAME AS charset, CC.COLLATION_NAME AS collation FROM information_schema.TABLES T JOIN information_schema.COLLATION_CHARACTER_SET_APPLICABILITY CC ON T.TABLE_COLLATION = CC.COLLATION_NAME WHERE T.TABLE_SCHEMA = DATABASE() AND T.TABLE_NAME = 'news'").Scan(&result)
+
+	needConvert := false
+	if result.Charset != "utf8mb4" {
+		log.Info().Str("charset", result.Charset).Str("collation", result.Collation).Msg("检测到news表字符集不是utf8mb4，准备转换...")
+		needConvert = true
+	}
+
+	// 检查content列的字符集
+	type columnCharset struct {
+		ColumnName string
+		Charset    string
+		Collation  string
+	}
+	var contentCol columnCharset
+	db.Raw("SELECT COLUMN_NAME AS columnName, CHARACTER_SET_NAME AS charset, COLLATION_NAME AS collation FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'news' AND COLUMN_NAME = 'content'").Scan(&contentCol)
+
+	if contentCol.Charset != "utf8mb4" {
+		log.Info().Str("charset", contentCol.Charset).Str("collation", contentCol.Collation).Msg("检测到news.content列字符集不是utf8mb4，准备转换...")
+		needConvert = true
+	}
+
+	if needConvert {
+		// 转换表字符集
+		if err := db.Exec("ALTER TABLE news CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci").Error; err != nil {
+			return err
+		}
+		log.Info().Msg("news表及content列字符集已转换为utf8mb4_unicode_ci")
+	} else {
+		log.Debug().Msg("news表和content列字符集已是utf8mb4，无需转换")
 	}
 
 	return nil

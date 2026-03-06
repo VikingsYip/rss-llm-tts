@@ -12,12 +12,13 @@ import (
 )
 
 type DialogueService struct {
-	db           *gorm.DB
-	llmService   *LLMService
-	ttsService   *TTSService
-	newsService  *NewsService
-	configSvc    *ConfigService
-	configs      map[string]string // 缓存配置
+	db             *gorm.DB
+	llmService     *LLMService
+	ttsService     *TTSService
+	newsService    *NewsService
+	configSvc      *ConfigService
+	wechatMPService *WeChatMPService
+	configs        map[string]string // 缓存配置
 }
 
 // NewDialogueService 创建对话服务
@@ -25,12 +26,13 @@ func NewDialogueService(db *gorm.DB, llm *LLMService, tts *TTSService, news *New
 	// 获取最新配置
 	configs, _ := configSvc.GetAllConfigs()
 	return &DialogueService{
-		db:          db,
-		llmService:  llm,
-		ttsService:  tts,
-		newsService: news,
-		configSvc:   configSvc,
-		configs:     configs,
+		db:             db,
+		llmService:     llm,
+		ttsService:     tts,
+		newsService:    news,
+		configSvc:      configSvc,
+		wechatMPService: NewWeChatMPService(db),
+		configs:        configs,
 	}
 }
 
@@ -199,6 +201,48 @@ func (s *DialogueService) generateDialogueContent(dialogueID uint) {
 	})
 
 	log.Info().Uint("id", dialogueID).Msg("对话生成完成")
+
+	// 对话生成完成后，推送到微信公众号草稿箱
+	go s.pushToWeChatDraft(dialogueID, dialogue.Title, dialogueResult.Rounds)
+}
+
+// pushToWeChatDraft 推送到微信公众号草稿箱
+func (s *DialogueService) pushToWeChatDraft(dialogueID uint, title string, rounds []Round) {
+	// 检查微信公众号推送是否启用
+	wechatConfig, err := s.wechatMPService.GetConfig()
+	if err != nil {
+		log.Warn().Err(err).Uint("id", dialogueID).Msg("获取微信公众号配置失败")
+		return
+	}
+
+	if !wechatConfig.Enabled {
+		log.Debug().Uint("id", dialogueID).Msg("微信公众号推送未启用，跳过草稿推送")
+		return
+	}
+
+	if wechatConfig.AppID == "" || wechatConfig.AppSecret == "" {
+		log.Warn().Uint("id", dialogueID).Msg("微信公众号AppID或AppSecret未配置，跳过草稿推送")
+		return
+	}
+
+	// 转换rounds格式
+	dialogueRounds := make([]DialogueRound, len(rounds))
+	for i, r := range rounds {
+		dialogueRounds[i] = DialogueRound{
+			Speaker: r.Speaker,
+			Text:    r.Text,
+		}
+	}
+
+	// 添加到草稿箱
+	author := "RSS-LLM-TTS"
+	mediaID, err := s.wechatMPService.AddDraft(title, author, "", dialogueRounds)
+	if err != nil {
+		log.Error().Err(err).Uint("id", dialogueID).Msg("推送微信公众号草稿失败")
+		return
+	}
+
+	log.Info().Uint("id", dialogueID).Str("media_id", mediaID).Msg("对话已推送到微信公众号草稿箱")
 }
 
 // updateDialogueError 更新对话错误信息

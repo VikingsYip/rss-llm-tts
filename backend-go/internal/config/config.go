@@ -152,7 +152,7 @@ func (c *Config) ensureDirectories() {
 }
 
 func (c *Config) GetDSN() string {
-	return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=Local",
+	return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=Local&collation=utf8mb4_unicode_ci",
 		c.Database.User,
 		c.Database.Password,
 		c.Database.Host,

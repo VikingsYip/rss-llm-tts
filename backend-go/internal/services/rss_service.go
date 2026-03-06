@@ -174,10 +174,14 @@ func (s *RssService) FetchFeed(feedID uint) (int, error) {
 		}
 
 		// 创建新闻记录（清理无效字符，使用替换符）
+		// 过滤掉一些可能导致MySQL字符集问题的控制字符
+		cleanContent := s.cleanContentForMySQL(content)
+		cleanTitle := s.cleanContentForMySQL(item.Title)
+
 		news := models.News{
-			Title:       s.truncateString(strings.ToValidUTF8(item.Title, ""), 500),
-			Content:     s.truncateString(strings.ToValidUTF8(content, ""), 50000),
-			Summary:     s.truncateString(strings.ToValidUTF8(summary, ""), 2000),
+			Title:       s.truncateString(cleanTitle, 500),
+			Content:     s.truncateString(cleanContent, 50000),
+			Summary:     s.truncateString(s.cleanContentForMySQL(summary), 2000),
 			Link:        item.Link,
 			Author:      "",
 			PublishedAt: &publishedAt,
@@ -460,6 +464,26 @@ func (s *RssService) truncateString(str string, maxLen int) string {
 		return str
 	}
 	return str[:maxLen]
+}
+
+// cleanContentForMySQL 清理内容中的无效字符，防止MySQL字符集错误
+func (s *RssService) cleanContentForMySQL(str string) string {
+	if str == "" {
+		return ""
+	}
+	// 先转换为有效的UTF-8
+	str = strings.ToValidUTF8(str, "")
+	// 使用 runes 来处理并过滤无效字符
+	runes := []rune(str)
+	validRunes := make([]rune, 0, len(runes))
+	for _, r := range runes {
+		// 过滤掉替换字符和非法字符
+		if r == 0xFFFD || r < 32 && r != '\t' && r != '\n' && r != '\r' {
+			continue
+		}
+		validRunes = append(validRunes, r)
+	}
+	return string(validRunes)
 }
 
 // cleanInvalidUTF8 清理无效的UTF-8字符（兼容MySQL utf8mb3）
