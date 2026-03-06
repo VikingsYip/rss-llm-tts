@@ -179,16 +179,50 @@ func (s *LLMService) GenerateDialogue(params DialogueParams) (*DialogueResult, e
 	return &dialogue, nil
 }
 
+// reloadConfigsFromDB 从数据库重新加载配置
+func (s *LLMService) reloadConfigsFromDB() map[string]string {
+	configs := make(map[string]string)
+	var dbConfigs []struct {
+		Key   string
+		Value string
+	}
+	// 读取所有配置（表名是 configs）
+	fmt.Println("=== DEBUG: 开始读取configs表 ===")
+	err := s.db.Table("configs").Select("`key`, `value`").Scan(&dbConfigs).Error
+	if err != nil {
+		fmt.Printf("=== DEBUG: 读取失败: %v ===\n", err)
+		log.Error().Err(err).Msg("读取configs表失败")
+	} else {
+		fmt.Printf("=== DEBUG: 读取到 %d 条配置 ===\n", len(dbConfigs))
+		log.Info().Int("count", len(dbConfigs)).Msg("读取到配置数量")
+		for _, c := range dbConfigs {
+			// 只记录包含 api 的配置
+			if strings.Contains(c.Key, "api") || strings.Contains(c.Key, "llm") {
+				fmt.Printf("=== DEBUG: %s = %s ===\n", c.Key, c.Value)
+				log.Info().Str("key", c.Key).Str("value", c.Value).Msg("数据库配置")
+			}
+			configs[c.Key] = c.Value
+		}
+	}
+	return configs
+}
+
 // callLLMAPI 调用LLM API
 func (s *LLMService) callLLMAPI(prompt string) (string, error) {
+	// 每次从数据库动态读取最新配置
+	dbConfigs := s.reloadConfigsFromDB()
+
 	// 优先从数据库配置读取，fallback到.env配置
-	apiURL := s.configs["llm_api_url"]
-	apiKey := s.configs["llm_api_key"]
-	model := s.configs["llm_model"]
+	apiURL := dbConfigs["llm_api_url"]
+	apiKey := dbConfigs["llm_api_key"]
+	model := dbConfigs["llm_model"]
+
+	log.Info().Str("api_url", apiURL).Str("model", model).Msg("LLM配置检查（动态读取）")
 
 	// 如果数据库没有配置，使用.env配置
 	if apiURL == "" {
 		apiURL = s.config.LLM.APIURL
+		log.Info().Str("fallback_api_url", apiURL).Msg("使用.env LLM配置")
 	}
 	if apiKey == "" {
 		apiKey = s.config.LLM.APIKey

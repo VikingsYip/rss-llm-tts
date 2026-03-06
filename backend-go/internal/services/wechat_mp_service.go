@@ -104,6 +104,8 @@ func (s *WeChatMPService) GetAccessToken() (string, error) {
 	url := fmt.Sprintf("https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid=%s&secret=%s",
 		config.AppID, config.AppSecret)
 
+	log.Info().Str("appid", config.AppID).Msg("获取access_token")
+
 	resp, err := http.Get(url)
 	if err != nil {
 		return "", fmt.Errorf("获取access_token失败: %v", err)
@@ -114,6 +116,8 @@ func (s *WeChatMPService) GetAccessToken() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("读取响应失败: %v", err)
 	}
+
+	log.Info().Str("response", string(body)).Msg("access_token响应")
 
 	var result map[string]interface{}
 	if err := json.Unmarshal(body, &result); err != nil {
@@ -219,6 +223,77 @@ func (s *WeChatMPService) SendTemplateMessage(title, content, url string) error 
 	return nil
 }
 
+// SendTextMessage 发送文本客服消息（不需要media_id）
+func (s *WeChatMPService) SendTextMessage(content string) error {
+	config, err := s.GetConfig()
+	if err != nil {
+		return err
+	}
+
+	if !config.Enabled {
+		return fmt.Errorf("微信公众号推送未启用")
+	}
+
+	if config.UserOpenID == "" {
+		return fmt.Errorf("未配置用户OpenID")
+	}
+
+	accessToken, err := s.GetAccessToken()
+	if err != nil {
+		return err
+	}
+
+	// 调用客服消息API
+	apiURL := fmt.Sprintf("https://api.weixin.qq.com/cgi-bin/message/custom/send?access_token=%s", accessToken)
+
+	// 构建文本消息
+	msg := map[string]interface{}{
+		"touser":  config.UserOpenID,
+		"msgtype": "text",
+		"text": map[string]string{
+			"content": content,
+		},
+	}
+
+	jsonData, err := json.Marshal(msg)
+	if err != nil {
+		return fmt.Errorf("序列化消息失败: %v", err)
+	}
+
+	log.Info().Str("request", string(jsonData)).Msg("发送文本客服消息")
+
+	req, err := http.NewRequest("POST", apiURL, strings.NewReader(string(jsonData)))
+	if err != nil {
+		return fmt.Errorf("创建请求失败: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("发送请求失败: %v", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("读取响应失败: %v", err)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return fmt.Errorf("解析响应失败: %v", err)
+	}
+
+	if errcode, ok := result["errcode"].(float64); ok && errcode != 0 {
+		errmsg, _ := result["errmsg"].(string)
+		return fmt.Errorf("微信API错误: %d - %s", int(errcode), errmsg)
+	}
+
+	log.Info().Msg("微信公众号文本消息发送成功")
+	return nil
+}
+
 // DialogueRound 对话轮次结构
 type DialogueRound struct {
 	Speaker string `json:"speaker"`
@@ -248,16 +323,13 @@ func (s *WeChatMPService) AddDraft(title, author, content string, rounds []Dialo
 	// 构建HTML内容
 	htmlContent := s.buildDialogueHTML(rounds)
 
-	// 调用永久图文素材API
+	// 调用永久图文素材API（虽然文档说部分废弃，但实际仍可用）
 	apiURL := fmt.Sprintf("https://api.weixin.qq.com/cgi-bin/material/add_news?access_token=%s", accessToken)
 
 	article := map[string]interface{}{
-		"title":              title,
-		"author":             author,
-		"content":           htmlContent,
-		"content_source_url": "",
-		"digest":            "",
-		"thumb_media_id":    "",
+		"title":        title,
+		"author":       author,
+		"content":      htmlContent,
 	}
 
 	articles := []interface{}{article}
@@ -270,6 +342,9 @@ func (s *WeChatMPService) AddDraft(title, author, content string, rounds []Dialo
 	if err != nil {
 		return "", fmt.Errorf("序列化消息失败: %v", err)
 	}
+
+	log.Info().Str("request", string(jsonData)).Msg("微信公众号草稿请求")
+	fmt.Printf("=== WECHAT DRAFT REQUEST: %s\n", string(jsonData))
 
 	req, err := http.NewRequest("POST", apiURL, strings.NewReader(string(jsonData)))
 	if err != nil {
@@ -289,6 +364,8 @@ func (s *WeChatMPService) AddDraft(title, author, content string, rounds []Dialo
 		return "", fmt.Errorf("读取响应失败: %v", err)
 	}
 
+	log.Info().Str("response", string(respBody)).Msg("微信公众号API响应")
+
 	var result map[string]interface{}
 	if err := json.Unmarshal(respBody, &result); err != nil {
 		return "", fmt.Errorf("解析响应失败: %v", err)
@@ -304,7 +381,7 @@ func (s *WeChatMPService) AddDraft(title, author, content string, rounds []Dialo
 		return "", fmt.Errorf("未获取到media_id")
 	}
 
-	log.Info().Str("title", title).Str("media_id", mediaID).Msg("微信公众号永久图文素材添加成功")
+	log.Info().Str("title", title).Str("media_id", mediaID).Msg("微信公众号草稿添加成功")
 	return mediaID, nil
 }
 

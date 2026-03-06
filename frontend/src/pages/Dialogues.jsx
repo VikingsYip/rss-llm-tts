@@ -99,6 +99,7 @@ const Dialogues = () => {
     ceo_interview: { text: 'CEO采访', color: 'purple' },
     commentary: { text: '评论', color: 'green' },
     chat: { text: '聊天', color: 'orange' },
+    daily: { text: '每日任务', color: 'cyan' },
   };
 
   const statusMap = {

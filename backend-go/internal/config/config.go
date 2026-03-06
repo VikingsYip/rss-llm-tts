@@ -15,14 +15,15 @@ import (
 )
 
 type Config struct {
-	Server   ServerConfig
-	Database DatabaseConfig
-	LLM      LLMConfig
-	TTS      TTSConfig
-	Proxy    ProxyConfig
-	Storage  StorageConfig
-	RSS      RSSConfig
-	Dialogue DialogueConfig
+	Server    ServerConfig
+	Database  DatabaseConfig
+	LLM       LLMConfig
+	TTS       TTSConfig
+	Proxy     ProxyConfig
+	Storage   StorageConfig
+	RSS       RSSConfig
+	Dialogue  DialogueConfig
+	DailyTask DailyTaskConfig
 }
 
 type ServerConfig struct {
@@ -70,6 +71,16 @@ type RSSConfig struct {
 type DialogueConfig struct {
 	NewsCount int
 	Rounds    int
+}
+
+// DailyTaskConfig 每日定时任务配置
+type DailyTaskConfig struct {
+	Enabled        bool   // 是否启用每日任务
+	ExecutionTime  string // 执行时间，格式 HH:MM
+	Host           string // 主持人名称
+	Guest          string // 嘉宾名称
+	Rounds         int    // 对话轮次
+	PushToWeChat   bool   // 是否推送到微信公众号
 }
 
 var AppConfig *Config
@@ -130,6 +141,14 @@ func LoadConfig() (*Config, error) {
 		Dialogue: DialogueConfig{
 			NewsCount: getEnvInt("DIALOGUE_NEWS_COUNT", 5),
 			Rounds:    getEnvInt("DIALOGUE_ROUNDS", 8),
+		},
+		DailyTask: DailyTaskConfig{
+			Enabled:       getEnvBool("DAILY_TASK_ENABLED", false),
+			ExecutionTime: getEnv("DAILY_TASK_TIME", "09:00"),
+			Host:          getEnv("DAILY_TASK_HOST", "叶总"),
+			Guest:         getEnv("DAILY_TASK_GUEST", "甲方视觉CIO庞总"),
+			Rounds:        getEnvInt("DAILY_TASK_ROUNDS", 10),
+			PushToWeChat:  getEnvBool("DAILY_TASK_PUSH_WECHAT", false),
 		},
 	}
 

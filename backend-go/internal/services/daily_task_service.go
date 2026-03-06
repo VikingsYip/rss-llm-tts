@@ -190,7 +190,10 @@ func (s *DailyTaskService) GetFavoriteNews(date string) ([]models.News, error) {
 
 // GenerateDailyDialogue 生成每日对话
 func (s *DailyTaskService) GenerateDailyDialogue() error {
-	cfg := s.config.DailyTask
+	// 使用内存中的配置数据（从数据库加载的）
+	cfg := s.configData
+
+	log.Info().Bool("enabled", cfg.Enabled).Str("time", cfg.ExecutionTime).Msg("读取任务配置")
 
 	// 检查是否启用
 	if !cfg.Enabled {
@@ -217,11 +220,14 @@ func (s *DailyTaskService) GenerateDailyDialogue() error {
 	}
 	if err := s.db.Create(&taskLog).Error; err != nil {
 		log.Error().Err(err).Msg("创建任务日志失败")
+		return err // 失败时直接返回，避免后续操作
 	}
 	log.Info().Uint("taskLogId", taskLog.ID).Msg("任务日志已创建")
 
 	// 获取当天收藏的文章
+	log.Info().Str("date", dateStr).Msg("开始查询当天收藏文章")
 	articles, err := s.GetFavoriteNews(dateStr)
+	log.Info().Int("article_count", len(articles)).Err(err).Msg("查询结果")
 	if err != nil {
 		taskLog.Status = "failed"
 		taskLog.ErrorMsg = err.Error()
@@ -232,6 +238,7 @@ func (s *DailyTaskService) GenerateDailyDialogue() error {
 
 	if len(articles) == 0 {
 		log.Warn().Msg("当天没有收藏的文章，跳过生成")
+		log.Info().Msg("=== 每日任务结束：跳过 ===")
 		taskLog.Status = "skipped"
 		taskLog.ErrorMsg = "当天没有收藏的文章"
 		taskLog.Duration = time.Since(startTime).Milliseconds()
@@ -245,6 +252,7 @@ func (s *DailyTaskService) GenerateDailyDialogue() error {
 	newsContent := s.buildNewsSummary(articles)
 
 	// 生成对话
+	log.Info().Msg("开始调用LLM生成对话...")
 	dialogueResult, err := s.llmService.GenerateDailyDialogue(llmDialogueParams{
 		Title:        title,
 		Host:         cfg.Host,
@@ -260,6 +268,8 @@ func (s *DailyTaskService) GenerateDailyDialogue() error {
 		s.db.Save(&taskLog)
 		return fmt.Errorf("生成对话失败: %v", err)
 	}
+
+	log.Info().Int("rounds", len(dialogueResult.Rounds)).Msg("LLM返回对话轮次")
 
 	// 保存对话到数据库
 	dialogue, err := s.saveDialogue(title, cfg.Host, cfg.Guest, cfg.Rounds, dialogueResult.Rounds, articles)
@@ -290,6 +300,7 @@ func (s *DailyTaskService) GenerateDailyDialogue() error {
 	taskLog.Duration = time.Since(startTime).Milliseconds()
 	s.db.Save(&taskLog)
 
+	log.Info().Msg("=== 每日任务结束：成功 ===")
 	return nil
 }
 
@@ -312,6 +323,8 @@ func (s *DailyTaskService) saveDialogue(title, host, guest string, rounds int, d
 	if err != nil {
 		return nil, fmt.Errorf("序列化对话内容失败: %v", err)
 	}
+
+	log.Info().Str("content", string(contentJSON)).Msg("保存对话内容")
 
 	// 转换新闻ID为JSON
 	newsIDs := make([]uint, len(articles))
@@ -337,20 +350,23 @@ func (s *DailyTaskService) saveDialogue(title, host, guest string, rounds int, d
 		return nil, err
 	}
 
+	log.Info().Uint("id", dialogue.ID).Msg("对话已保存")
+
 	return dialogue, nil
 }
 
-// pushToWeChat 推送到微信公众号（带重试机制）
+// pushToWeChat 推送到微信公众号（带重试机制）- 使用文本客服消息
 func (s *DailyTaskService) pushToWeChat(dialogueID uint, title string, rounds []Round) {
 	// 构建推送标题
 	pushTitle := fmt.Sprintf("%s %s&%s交流实录", title, s.config.DailyTask.Host, s.config.DailyTask.Guest)
 
-	// 转换对话格式
-	dialogueRounds := make([]DialogueRound, len(rounds))
+	// 构建纯文本内容
+	var textContent strings.Builder
+	textContent.WriteString(pushTitle + "\n\n")
 	for i, r := range rounds {
-		dialogueRounds[i] = DialogueRound{
-			Speaker: r.Speaker,
-			Text:    r.Text,
+		textContent.WriteString(fmt.Sprintf("%d. %s：%s\n", i+1, r.Speaker, r.Text))
+		if (i+1)%2 == 0 {
+			textContent.WriteString("\n")
 		}
 	}
 
@@ -359,11 +375,11 @@ func (s *DailyTaskService) pushToWeChat(dialogueID uint, title string, rounds []
 	retryInterval := 5 * time.Second
 
 	for attempt := 1; attempt <= maxRetries; attempt++ {
-		log.Info().Uint("id", dialogueID).Int("attempt", attempt).Msg("尝试推送微信公众号")
+		log.Info().Uint("id", dialogueID).Int("attempt", attempt).Msg("尝试推送微信公众号（文本消息）")
 
-		mediaID, err := s.wechatMPService.AddDraft(pushTitle, "RSS-LLM-TTS", "", dialogueRounds)
+		err := s.wechatMPService.SendTextMessage(textContent.String())
 		if err == nil {
-			log.Info().Uint("id", dialogueID).Str("media_id", mediaID).Msg("微信公众号推送成功")
+			log.Info().Uint("id", dialogueID).Msg("微信公众号文本消息推送成功")
 			return
 		}
 
@@ -379,17 +395,18 @@ func (s *DailyTaskService) pushToWeChat(dialogueID uint, title string, rounds []
 	log.Error().Uint("id", dialogueID).Msg("微信公众号推送失败，已达到最大重试次数")
 }
 
-// pushToWeChatSync 同步推送到微信公众号（带重试机制）
+// pushToWeChatSync 同步推送到微信公众号（带重试机制）- 使用文本客服消息
 func (s *DailyTaskService) pushToWeChatSync(dialogueID uint, title string, rounds []Round) (string, error) {
 	// 构建推送标题
 	pushTitle := fmt.Sprintf("%s %s&%s交流实录", title, s.config.DailyTask.Host, s.config.DailyTask.Guest)
 
-	// 转换对话格式
-	dialogueRounds := make([]DialogueRound, len(rounds))
+	// 构建纯文本内容
+	var textContent strings.Builder
+	textContent.WriteString(pushTitle + "\n\n")
 	for i, r := range rounds {
-		dialogueRounds[i] = DialogueRound{
-			Speaker: r.Speaker,
-			Text:    r.Text,
+		textContent.WriteString(fmt.Sprintf("%d. %s：%s\n", i+1, r.Speaker, r.Text))
+		if (i+1)%2 == 0 {
+			textContent.WriteString("\n")
 		}
 	}
 
@@ -398,12 +415,12 @@ func (s *DailyTaskService) pushToWeChatSync(dialogueID uint, title string, round
 	retryInterval := 5 * time.Second
 
 	for attempt := 1; attempt <= maxRetries; attempt++ {
-		log.Info().Uint("id", dialogueID).Int("attempt", attempt).Msg("尝试推送微信公众号")
+		log.Info().Uint("id", dialogueID).Int("attempt", attempt).Msg("尝试推送微信公众号（文本消息）")
 
-		mediaID, err := s.wechatMPService.AddDraft(pushTitle, "RSS-LLM-TTS", "", dialogueRounds)
+		err := s.wechatMPService.SendTextMessage(textContent.String())
 		if err == nil {
-			log.Info().Uint("id", dialogueID).Str("media_id", mediaID).Msg("微信公众号推送成功")
-			return mediaID, nil
+			log.Info().Uint("id", dialogueID).Msg("微信公众号文本消息推送成功")
+			return "text_message", nil
 		}
 
 		log.Warn().Err(err).Uint("id", dialogueID).Int("attempt", attempt).Msg("微信公众号推送失败")
@@ -449,9 +466,27 @@ func (s *LLMService) GenerateDailyDialogue(params llmDialogueParams) (*DialogueR
 请以JSON格式返回，格式如下：
 {"rounds": [{"speaker": "主持人/嘉宾", "text": "对话内容"}]}`, params.Title, params.Host, params.Guest, params.Rounds, params.NewsContent, params.Title)
 
+	// 优先从数据库配置读取，fallback到.env配置
+	apiURL := s.configs["llm_api_url"]
+	apiKey := s.configs["llm_api_key"]
+	model := s.configs["llm_model"]
+
+	// 如果数据库没有配置，使用.env配置
+	if apiURL == "" {
+		apiURL = s.config.LLM.APIURL
+	}
+	if apiKey == "" {
+		apiKey = s.config.LLM.APIKey
+	}
+	if model == "" {
+		model = s.config.LLM.Model
+	}
+
+	log.Info().Str("api_url", apiURL).Str("model", model).Msg("GenerateDailyDialogue使用配置")
+
 	// 构建请求
 	reqBody := map[string]interface{}{
-		"model": s.config.LLM.Model,
+		"model": model,
 		"messages": []map[string]string{
 			{"role": "system", "content": "你是一个专业的商业对话生成助手，擅长生成简洁有力的商务对话。"},
 			{"role": "user", "content": prompt},
@@ -461,14 +496,14 @@ func (s *LLMService) GenerateDailyDialogue(params llmDialogueParams) (*DialogueR
 
 	// 发送请求
 	jsonData, _ := json.Marshal(reqBody)
-	req, err := http.NewRequest("POST", s.config.LLM.APIURL, strings.NewReader(string(jsonData)))
+	req, err := http.NewRequest("POST", apiURL, strings.NewReader(string(jsonData)))
 	if err != nil {
 		return nil, err
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	if s.config.LLM.APIKey != "" {
-		req.Header.Set("Authorization", "Bearer "+s.config.LLM.APIKey)
+	if apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
 	}
 
 	resp, err := s.client.Do(req)

@@ -64,7 +64,8 @@ func InitDB(cfg *config.Config) (*gorm.DB, error) {
 
 // autoMigrate 自动迁移数据库表
 func autoMigrate(db *gorm.DB) error {
-	return db.AutoMigrate(
+	// 先执行 AutoMigrate
+	err := db.AutoMigrate(
 		&models.RssFeed{},
 		&models.News{},
 		&models.Dialogue{},
@@ -73,6 +74,23 @@ func autoMigrate(db *gorm.DB) error {
 		&models.WeChatMPConfig{},
 		&models.DailyTaskLog{},
 	)
+	if err != nil {
+		return err
+	}
+
+	// 修复 dialogueType 列宽度（兼容旧数据库）
+	log.Info().Msg("修复 dialogueType 列...")
+	if err := db.Exec("ALTER TABLE dialogues MODIFY COLUMN dialogueType VARCHAR(50) NOT NULL").Error; err != nil {
+		log.Warn().Err(err).Msg("修复 dialogueType 列失败，可能是列类型问题")
+	}
+
+	// 确保 Content 列是 JSON 类型
+	log.Info().Msg("检查 Content 列...")
+	if err := db.Exec("ALTER TABLE dialogues MODIFY COLUMN content JSON").Error; err != nil {
+		log.Warn().Err(err).Msg("修复 Content 列失败")
+	}
+
+	return nil
 }
 
 // MigrateNewsTable 迁移 news 表结构（删除旧列）

@@ -40,6 +40,7 @@ const DialogueDetail = () => {
     ceo_interview: { text: 'CEO采访', color: 'purple' },
     commentary: { text: '评论', color: 'green' },
     chat: { text: '聊天', color: 'orange' },
+    daily: { text: '每日任务', color: 'cyan' },
   };
 
   const statusMap = {
@@ -146,19 +147,26 @@ const DialogueDetail = () => {
   // 解析对话内容
   const parseDialogueContent = () => {
     if (!dialogue?.content) return null;
-    
+
     try {
+      let parsed;
       // 如果content已经是对象，直接返回
       if (typeof dialogue.content === 'object') {
-        return dialogue.content;
+        parsed = dialogue.content;
       }
-      
       // 如果content是字符串，尝试解析JSON
-      if (typeof dialogue.content === 'string') {
-        return JSON.parse(dialogue.content);
+      else if (typeof dialogue.content === 'string') {
+        parsed = JSON.parse(dialogue.content);
+      } else {
+        return null;
       }
-      
-      return null;
+
+      // 如果解析后是数组（每日任务格式），包装成 {rounds: array}
+      if (Array.isArray(parsed)) {
+        return { rounds: parsed };
+      }
+
+      return parsed;
     } catch (error) {
       console.error('解析对话内容失败:', error);
       return null;
