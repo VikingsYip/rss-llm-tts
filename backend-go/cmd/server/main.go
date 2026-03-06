@@ -56,9 +56,11 @@ func main() {
 	llmService := services.NewLLMService(db, cfg, appConfigs)
 	ttsService := services.NewTTSService(db, cfg, appConfigs)
 	dialogueService := services.NewDialogueService(db, llmService, ttsService, newsService, configService)
+	// 初始化每日任务服务
+	dailyTaskService := services.NewDailyTaskService(db, llmService, wechatMPService, cfg)
 
 	// 初始化调度器
-	scheduler := services.NewScheduler(rssService, jobLogService)
+	scheduler := services.NewScheduler(rssService, jobLogService, dailyTaskService)
 	if err := scheduler.Start(); err != nil {
 		log.Error().Err(err).Msg("调度器启动失败")
 	}
@@ -80,6 +82,7 @@ func main() {
 	configHandler := handlers.NewConfigHandler(configService)
 	jobHandler := handlers.NewJobHandler(jobLogService)
 	wechatMPHandler := handlers.NewWeChatMPHandler(wechatMPService)
+	dailyTaskHandler := handlers.NewDailyTaskHandler(dailyTaskService, scheduler)
 
 	// 健康检查
 	r.GET("/health", func(c *gin.Context) {
@@ -183,6 +186,15 @@ func main() {
 			wechat.POST("/dialogue/:id/push", wechatMPHandler.PushDialogueToDraft)
 			// 微信服务器验证回调
 			wechat.GET("/callback", wechatMPHandler.VerifyServer)
+		}
+
+		// 每日定时任务配置
+		dailyTask := api.Group("/daily-task")
+		{
+			dailyTask.GET("/config", dailyTaskHandler.GetConfig)
+			dailyTask.POST("/config", dailyTaskHandler.SaveConfig)
+			dailyTask.POST("/trigger", dailyTaskHandler.Trigger)
+			dailyTask.GET("/logs", dailyTaskHandler.GetLogs)
 		}
 	}
 

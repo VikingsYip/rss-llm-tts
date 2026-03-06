@@ -71,6 +71,7 @@ func autoMigrate(db *gorm.DB) error {
 		&models.Config{},
 		&models.RssJobLog{},
 		&models.WeChatMPConfig{},
+		&models.DailyTaskLog{},
 	)
 }
 
