@@ -236,7 +236,7 @@ func (s *Scheduler) ScheduleDailyTask() {
 	}
 	minute := parts[0]
 	hour := parts[1]
-	spec := fmt.Sprintf("0 %s %s * * ?", minute, hour) // 格式: 秒 分 时 日 月 周
+	spec := fmt.Sprintf("%s %s * * ?", minute, hour) // 格式: 分 时 日 月 周 (5字段)
 
 	// 引用指针避免闭包问题
 	svc := s.dailyTaskSvc
