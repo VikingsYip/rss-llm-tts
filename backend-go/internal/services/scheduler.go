@@ -234,8 +234,8 @@ func (s *Scheduler) ScheduleDailyTask() {
 		log.Error().Str("time", execTime).Msg("执行时间格式错误，应为 HH:MM")
 		return
 	}
-	minute := parts[0]
-	hour := parts[1]
+	minute := parts[1]  // MM
+	hour := parts[0]     // HH
 	spec := fmt.Sprintf("%s %s * * ?", minute, hour) // 格式: 分 时 日 月 周 (5字段)
 
 	// 引用指针避免闭包问题
