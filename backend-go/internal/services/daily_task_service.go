@@ -166,7 +166,7 @@ func (s *DailyTaskService) GetLogs(page, limit int) ([]models.DailyTaskLog, int6
 	}
 
 	offset := (page - 1) * limit
-	if err := query.Order("created_at DESC").Offset(offset).Limit(limit).Find(&logs).Error; err != nil {
+	if err := query.Order("createdAt DESC").Offset(offset).Limit(limit).Find(&logs).Error; err != nil {
 		return nil, 0, err
 	}
 
