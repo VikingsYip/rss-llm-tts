@@ -11,12 +11,14 @@ import (
 )
 
 type Scheduler struct {
-	cron       *cron.Cron
-	rssSvc     *RssService
-	jobLogSvc  *JobLogService
-	feedMgr    *FeedManager
-	entries    map[uint]cron.EntryID
-	feedNames  map[uint]string // feedID -> feedName
+	cron         *cron.Cron
+	rssSvc       *RssService
+	jobLogSvc    *JobLogService
+	dailyTaskSvc *DailyTaskService
+	feedMgr      *FeedManager
+	entries      map[uint]cron.EntryID
+	feedNames    map[uint]string // feedID -> feedName
+	dailyEntryID cron.EntryID    // 每日任务ID
 }
 
 type FeedManager struct {
@@ -29,13 +31,14 @@ type FeedDB interface {
 	First(interface{}, ...interface{}) interface{}
 }
 
-func NewScheduler(rssSvc *RssService, jobLogSvc *JobLogService) *Scheduler {
+func NewScheduler(rssSvc *RssService, jobLogSvc *JobLogService, dailyTaskSvc *DailyTaskService) *Scheduler {
 	return &Scheduler{
-		cron:      cron.New(),
-		rssSvc:    rssSvc,
-		jobLogSvc: jobLogSvc,
-		entries:   make(map[uint]cron.EntryID),
-		feedNames: make(map[uint]string),
+		cron:         cron.New(),
+		rssSvc:       rssSvc,
+		jobLogSvc:    jobLogSvc,
+		dailyTaskSvc: dailyTaskSvc,
+		entries:      make(map[uint]cron.EntryID),
+		feedNames:    make(map[uint]string),
 	}
 }
 
@@ -56,6 +59,9 @@ func (s *Scheduler) Start() error {
 	// 启动cron
 	s.cron.Start()
 	log.Info().Int("count", len(feeds)).Msg("RSS定时抓取任务已启动")
+
+	// 启动每日定时任务
+	s.ScheduleDailyTask()
 
 	return nil
 }
@@ -207,6 +213,57 @@ func (s *Scheduler) Stop() {
 	s.cron.Stop()
 	log.Info().Msg("RSS定时抓取任务已停止")
 }
+
+// ScheduleDailyTask 安排每日定时任务
+func (s *Scheduler) ScheduleDailyTask() {
+	// 如果已有每日任务，先移除
+	if s.dailyEntryID > 0 {
+		s.cron.Remove(s.dailyEntryID)
+	}
+
+	// 检查是否启用
+	if s.dailyTaskSvc == nil || !s.dailyTaskSvc.IsEnabled() {
+		log.Info().Msg("每日任务未启用")
+		return
+	}
+
+	// 获取执行时间 (格式 HH:MM -> 分 时)
+	execTime := s.dailyTaskSvc.GetExecutionTime()
+	parts := strings.Split(execTime, ":")
+	if len(parts) != 2 {
+		log.Error().Str("time", execTime).Msg("执行时间格式错误，应为 HH:MM")
+		return
+	}
+	minute := parts[0]
+	hour := parts[1]
+	spec := fmt.Sprintf("0 %s %s * * ?", minute, hour) // 格式: 秒 分 时 日 月 周
+
+	// 引用指针避免闭包问题
+	svc := s.dailyTaskSvc
+
+	// 添加定时任务
+	entryID, err := s.cron.AddFunc(spec, func() {
+		log.Info().Msg("开始执行每日定时任务")
+		if err := svc.GenerateDailyDialogue(); err != nil {
+			log.Error().Err(err).Msg("每日任务执行失败")
+		}
+	})
+	if err != nil {
+		log.Error().Err(err).Str("spec", spec).Msg("每日任务调度失败")
+		return
+	}
+
+	s.dailyEntryID = entryID
+	log.Info().Str("time", execTime).Msg("每日定时任务已启动")
+}
+
+// ReloadDailyTask 重新加载每日任务配置
+func (s *Scheduler) ReloadDailyTask() {
+	log.Info().Msg("重新加载每日任务配置")
+	s.ScheduleDailyTask()
+}
+
+// GetStatus 获取任务状态
 
 // GetStatus 获取任务状态
 func (s *Scheduler) GetStatus() map[string]interface{} {
