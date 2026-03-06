@@ -9,6 +9,7 @@ import {
   SettingOutlined,
   BarChartOutlined,
   ScheduleOutlined,
+  ClockCircleOutlined,
 } from '@ant-design/icons';
 
 const { Sider } = Layout;
@@ -37,6 +38,11 @@ const AppSider = ({ collapsed, isMobile, onClose }) => {
       key: '/jobs',
       icon: <ScheduleOutlined />,
       label: '任务调度',
+    },
+    {
+      key: '/daily-task-logs',
+      icon: <ClockCircleOutlined />,
+      label: '每日任务',
     },
     {
       key: '/category-stats',

@@ -12,6 +12,7 @@ import DialogueDetail from './pages/DialogueDetail';
 import Settings from './pages/Settings';
 import CategoryStats from './pages/CategoryStats';
 import JobScheduler from './pages/JobScheduler';
+import DailyTaskLogs from './pages/DailyTaskLogs';
 import './App.css';
 
 const { Content } = Layout;
@@ -69,6 +70,7 @@ function App() {
               <Route path="/news/:id" element={<NewsDetail />} />
               <Route path="/feeds" element={<RssFeeds />} />
               <Route path="/jobs" element={<JobScheduler />} />
+              <Route path="/daily-task-logs" element={<DailyTaskLogs />} />
               <Route path="/dialogues" element={<Dialogues />} />
               <Route path="/dialogues/:id" element={<DialogueDetail />} />
               <Route path="/settings" element={<Settings />} />
