@@ -215,7 +215,10 @@ func (s *DailyTaskService) GenerateDailyDialogue() error {
 		Status:      "running",
 		TriggerTime: startTime,
 	}
-	s.db.Create(&taskLog)
+	if err := s.db.Create(&taskLog).Error; err != nil {
+		log.Error().Err(err).Msg("创建任务日志失败")
+	}
+	log.Info().Uint("taskLogId", taskLog.ID).Msg("任务日志已创建")
 
 	// 获取当天收藏的文章
 	articles, err := s.GetFavoriteNews(dateStr)
