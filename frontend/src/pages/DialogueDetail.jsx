@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { 
   Card, 
   Typography, 
@@ -32,6 +32,7 @@ const DialogueDetail = () => {
   const [dialogue, setDialogue] = useState(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
+  const audioRef = useRef(null);
   const { id } = useParams();
   const navigate = useNavigate();
 
@@ -100,7 +101,13 @@ const DialogueDetail = () => {
   const handlePlayAudio = (audioFile) => {
     try {
       message.loading('正在加载音频...', 0);
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.src = '';
+        audioRef.current.load();
+      }
       const audio = new Audio(`/uploads/${audioFile}`);
+      audioRef.current = audio;
       
       audio.addEventListener('loadstart', () => {
         message.loading('正在加载音频...', 0);
@@ -183,6 +190,17 @@ const DialogueDetail = () => {
       fetchDialogueDetail();
     }
   }, [id]);
+
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.src = '';
+        audioRef.current.load();
+        audioRef.current = null;
+      }
+    };
+  }, []);
 
   if (loading) {
     return (
@@ -398,4 +416,4 @@ const DialogueDetail = () => {
   );
 };
 
-export default DialogueDetail; 
+export default DialogueDetail;

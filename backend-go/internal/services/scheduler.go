@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -169,9 +170,11 @@ func (s *Scheduler) fetchFeedWithCheck(feedID uint) {
 	done := make(chan struct{})
 	var count int
 	var err error
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
 
 	go func() {
-		count, err = s.rssSvc.FetchFeed(feedIDLocal)
+		count, err = s.rssSvc.FetchFeedWithContext(ctx, feedIDLocal)
 		close(done)
 	}()
 
@@ -191,6 +194,7 @@ func (s *Scheduler) fetchFeedWithCheck(feedID uint) {
 			}
 		}
 	case <-time.After(60 * time.Second):
+		cancel()
 		// 超时
 		log.Error().Uint("feed_id", feedIDLocal).Msg("定时抓取超时")
 		if jobLog != nil {
@@ -339,9 +343,11 @@ func (s *Scheduler) TriggerManual(feedID uint) error {
 	done := make(chan struct{})
 	var count int
 	var err error
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
 
 	go func() {
-		count, err = s.rssSvc.FetchFeed(feedID)
+		count, err = s.rssSvc.FetchFeedWithContext(ctx, feedID)
 		close(done)
 	}()
 
@@ -361,6 +367,7 @@ func (s *Scheduler) TriggerManual(feedID uint) error {
 		}
 		return nil
 	case <-time.After(60 * time.Second):
+		cancel()
 		log.Error().Uint("feed_id", feedID).Msg("手动抓取超时")
 		if jobLog != nil {
 			jobLog.Timeout()

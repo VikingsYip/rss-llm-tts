@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { 
   Card, 
   Table, 
@@ -47,6 +47,7 @@ const Dialogues = () => {
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [form] = Form.useForm();
   const [creating, setCreating] = useState(false);
+  const audioRef = useRef(null);
   const [pagination, setPagination] = useState({
     current: 1,
     pageSize: 10,
@@ -190,6 +191,17 @@ const Dialogues = () => {
     fetchDialogues();
     // 获取新闻分类
     fetchCategories();
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.src = '';
+        audioRef.current.load();
+        audioRef.current = null;
+      }
+    };
   }, []);
 
   // 获取新闻分类
@@ -357,7 +369,13 @@ const Dialogues = () => {
   const handlePlayAudio = (audioFile) => {
     try {
       message.loading('正在加载音频...', 0);
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.src = '';
+        audioRef.current.load();
+      }
       const audio = new Audio(`/uploads/${audioFile}`);
+      audioRef.current = audio;
       
       audio.addEventListener('loadstart', () => {
         message.loading('正在加载音频...', 0);
@@ -876,4 +894,4 @@ const Dialogues = () => {
   );
 };
 
-export default Dialogues; 
+export default Dialogues;

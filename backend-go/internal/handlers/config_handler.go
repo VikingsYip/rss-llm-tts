@@ -95,6 +95,7 @@ func (h *ConfigHandler) SaveSystemSettings(c *gin.Context) {
 		"llmApiUrl":         "llm_api_url",
 		"llmApiKey":         "llm_api_key",
 		"llmModel":          "llm_model",
+		"ttsProvider":       "tts_provider",
 		"ttsApiUrl":         "tts_api_url",
 		"ttsAppId":          "tts_app_id",
 		"ttsApiKey":         "tts_api_key",

@@ -55,7 +55,7 @@ const DailyTaskLogs = () => {
   const handlePushToWeChat = async (log) => {
     Modal.confirm({
       title: '确认推送',
-      content: `确定要将对话 "${log.title}" 推送到微信公众号草稿箱吗？`,
+      content: `确定要将对话 "${log.title}" 推送到微信公众号吗？`,
       onOk: async () => {
         try {
           message.loading('正在推送...', 0);
@@ -67,7 +67,7 @@ const DailyTaskLogs = () => {
           message.destroy();
 
           if (result.success) {
-            message.success(`推送成功，media_id: ${result.data.media_id}`);
+            message.success('推送成功');
             fetchLogs(pagination.current, pagination.pageSize);
           } else {
             message.error(`推送失败: ${result.message}`);

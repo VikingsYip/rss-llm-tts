@@ -12,13 +12,13 @@ import (
 )
 
 type DialogueService struct {
-	db             *gorm.DB
-	llmService     *LLMService
-	ttsService     *TTSService
-	newsService    *NewsService
-	configSvc      *ConfigService
+	db              *gorm.DB
+	llmService      *LLMService
+	ttsService      *TTSService
+	newsService     *NewsService
+	configSvc       *ConfigService
 	wechatMPService *WeChatMPService
-	configs        map[string]string // 缓存配置
+	configs         map[string]string // 缓存配置
 }
 
 // NewDialogueService 创建对话服务
@@ -26,13 +26,13 @@ func NewDialogueService(db *gorm.DB, llm *LLMService, tts *TTSService, news *New
 	// 获取最新配置
 	configs, _ := configSvc.GetAllConfigs()
 	return &DialogueService{
-		db:             db,
-		llmService:     llm,
-		ttsService:     tts,
-		newsService:    news,
-		configSvc:      configSvc,
+		db:              db,
+		llmService:      llm,
+		ttsService:      tts,
+		newsService:     news,
+		configSvc:       configSvc,
 		wechatMPService: NewWeChatMPService(db),
-		configs:        configs,
+		configs:         configs,
 	}
 }
 
@@ -119,12 +119,12 @@ func (s *DialogueService) generateDialogueContent(dialogueID uint) {
 		}
 		for _, n := range news {
 			newsContent = append(newsContent, NewsContent{
-				Title:      n.Title,
-				Summary:    n.Summary,
-				Content:    n.Content,
-				Source:     n.SourceName,
+				Title:       n.Title,
+				Summary:     n.Summary,
+				Content:     n.Content,
+				Source:      n.SourceName,
 				PublishedAt: *n.PublishedAt,
-				Author:     n.Author,
+				Author:      n.Author,
 			})
 		}
 	} else {
@@ -139,12 +139,12 @@ func (s *DialogueService) generateDialogueContent(dialogueID uint) {
 				publishedAt = time.Now()
 			}
 			newsContent = append(newsContent, NewsContent{
-				Title:      n.Title,
-				Summary:    n.Summary,
-				Content:    n.Content,
-				Source:     n.SourceName,
+				Title:       n.Title,
+				Summary:     n.Summary,
+				Content:     n.Content,
+				Source:      n.SourceName,
 				PublishedAt: publishedAt,
-				Author:     n.Author,
+				Author:      n.Author,
 			})
 		}
 	}
@@ -193,11 +193,12 @@ func (s *DialogueService) generateDialogueContent(dialogueID uint) {
 	newsCount := len(newsContent)
 
 	s.db.Model(&dialogue).Updates(map[string]interface{}{
-		"status":      "completed",
+		"status":       "completed",
 		"content":      string(contentJSON),
-		"audioFile":   audioFile,
-		"duration":    duration,
-		"newsCount":   newsCount,
+		"audioFile":    audioFile,
+		"duration":     duration,
+		"newsCount":    newsCount,
+		"errorMessage": "",
 	})
 
 	log.Info().Uint("id", dialogueID).Msg("对话生成完成")
@@ -234,15 +235,14 @@ func (s *DialogueService) pushToWeChatDraft(dialogueID uint, title string, round
 		}
 	}
 
-	// 添加到草稿箱
-	author := "RSS-LLM-TTS"
-	mediaID, err := s.wechatMPService.AddDraft(title, author, "", dialogueRounds)
+	// 推送到微信公众号（文本客服消息）
+	err = s.wechatMPService.PushDialogueAsText(title, dialogueRounds)
 	if err != nil {
-		log.Error().Err(err).Uint("id", dialogueID).Msg("推送微信公众号草稿失败")
+		log.Error().Err(err).Uint("id", dialogueID).Msg("推送微信公众号失败")
 		return
 	}
 
-	log.Info().Uint("id", dialogueID).Str("media_id", mediaID).Msg("对话已推送到微信公众号草稿箱")
+	log.Info().Uint("id", dialogueID).Msg("对话已推送到微信公众号")
 }
 
 // updateDialogueError 更新对话错误信息

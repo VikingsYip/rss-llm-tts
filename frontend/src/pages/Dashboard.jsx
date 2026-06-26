@@ -1,30 +1,32 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Card, 
-  Row, 
-  Col, 
-  Statistic, 
-  Spin, 
-  Progress, 
-  List, 
+import {
+  Card,
+  Row,
+  Col,
+  Statistic,
+  Spin,
+  Progress,
+  List,
   Tag,
   Typography,
   message
 } from 'antd';
-import { 
-  FileTextOutlined, 
-  LinkOutlined, 
+import {
+  FileTextOutlined,
+  LinkOutlined,
   MessageOutlined,
   EyeOutlined,
   HeartOutlined,
   CalendarOutlined
 } from '@ant-design/icons';
+import { useNavigate } from 'react-router-dom';
 
 const { Title, Text } = Typography;
 
 const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
+  const navigate = useNavigate();
   const [stats, setStats] = useState({
     news: { total: 0, today: 0 },
     feeds: { total: 0, active: 0 },
@@ -51,8 +53,16 @@ const Dashboard = () => {
       const response = await fetch('/api/news/stats/dashboard');
       const data = await response.json();
       
-      if (data.success) {
-        setStats(data.data);
+      if (data.success && data.data) {
+        // 确保数据格式正确
+        const safeData = {
+          news: data.data.news || { total: 0, today: 0 },
+          feeds: data.data.feeds || { total: 0, active: 0 },
+          dialogues: data.data.dialogues || { total: 0, today: 0 },
+          categories: data.data.categories || [],
+          sources: data.data.sources || []
+        };
+        setStats(safeData);
       } else {
         message.error('获取仪表板数据失败');
       }
@@ -81,6 +91,32 @@ const Dashboard = () => {
       return (num / 1000).toFixed(1) + 'k';
     }
     return num.toString();
+  };
+
+  // 获取今天的日期字符串 (YYYY-MM-DD)
+  const getTodayDate = () => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  // 跳转到今日新闻
+  const goToTodayNews = () => {
+    const today = getTodayDate();
+    navigate(`/news?startDate=${today}&endDate=${today}`);
+  };
+
+  // 跳转到RSS源管理
+  const goToFeeds = () => {
+    navigate('/feeds');
+  };
+
+  // 跳转到今日对话
+  const goToTodayDialogues = () => {
+    const today = getTodayDate();
+    navigate(`/dialogues?startDate=${today}&endDate=${today}`);
   };
 
   if (loading) {
@@ -228,7 +264,7 @@ const Dashboard = () => {
           <Card title="快速操作">
             <Row gutter={16}>
               <Col xs={24} sm={8}>
-                <Card size="small" hoverable>
+                <Card size="small" hoverable onClick={goToTodayNews} style={{ cursor: 'pointer' }}>
                   <div style={{ textAlign: 'center' }}>
                     <CalendarOutlined style={{ fontSize: 24, color: '#1890ff' }} />
                     <div style={{ marginTop: 8 }}>
@@ -241,9 +277,9 @@ const Dashboard = () => {
                 </Card>
               </Col>
               <Col xs={24} sm={8}>
-                <Card size="small" hoverable>
+                <Card size="small" hoverable onClick={goToFeeds} style={{ cursor: 'pointer' }}>
                   <div style={{ textAlign: 'center' }}>
-                    <HeartOutlined style={{ fontSize: 24, color: '#ff4d4f' }} />
+                    <LinkOutlined style={{ fontSize: 24, color: '#52c41a' }} />
                     <div style={{ marginTop: 8 }}>
                       <Text strong>活跃RSS源</Text>
                     </div>
@@ -254,7 +290,7 @@ const Dashboard = () => {
                 </Card>
               </Col>
               <Col xs={24} sm={8}>
-                <Card size="small" hoverable>
+                <Card size="small" hoverable onClick={goToTodayDialogues} style={{ cursor: 'pointer' }}>
                   <div style={{ textAlign: 'center' }}>
                     <MessageOutlined style={{ fontSize: 24, color: '#faad14' }} />
                     <div style={{ marginTop: 8 }}>

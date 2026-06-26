@@ -26,9 +26,9 @@ import (
 )
 
 type RssService struct {
-	db          *gorm.DB
-	config      *config.Config
-	configSvc   *ConfigService // 用于从数据库读取最新配置
+	db        *gorm.DB
+	config    *config.Config
+	configSvc *ConfigService // 用于从数据库读取最新配置
 }
 
 func NewRssService(db *gorm.DB, cfg *config.Config, configSvc *ConfigService) *RssService {
@@ -92,6 +92,14 @@ func (s *RssService) FetchAllFeeds() (int, error) {
 
 // FetchFeed 抓取单个RSS源
 func (s *RssService) FetchFeed(feedID uint) (int, error) {
+	return s.FetchFeedWithContext(context.Background(), feedID)
+}
+
+func (s *RssService) FetchFeedWithContext(ctx context.Context, feedID uint) (int, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	// 内存检查
 	if s.isMemoryHigh() {
 		log.Warn().Uint("feed_id", feedID).Msg("内存使用率过高，跳过抓取")
@@ -114,7 +122,7 @@ func (s *RssService) FetchFeed(feedID uint) (int, error) {
 	}
 
 	// 获取RSS内容
-	rssContent, err := s.fetchRssContent(feed.URL)
+	rssContent, err := s.fetchRssContent(ctx, feed.URL)
 	if err != nil {
 		return 0, err
 	}
@@ -167,7 +175,7 @@ func (s *RssService) FetchFeed(feedID uint) (int, error) {
 
 		// 获取完整内容（可选）
 		if item.Link != "" && content == "" {
-			fullContent, err := s.fetchFullContent(item.Link)
+			fullContent, err := s.fetchFullContent(ctx, item.Link)
 			if err == nil && fullContent != "" {
 				content = fullContent
 			}
@@ -215,7 +223,11 @@ func (s *RssService) FetchFeed(feedID uint) (int, error) {
 }
 
 // fetchRssContent 获取RSS内容（带代理和重试）
-func (s *RssService) fetchRssContent(feedURL string) (string, error) {
+func (s *RssService) fetchRssContent(ctx context.Context, feedURL string) (string, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	// 创建请求
 	req, err := http.NewRequest("GET", feedURL, nil)
 	if err != nil {
@@ -239,6 +251,7 @@ func (s *RssService) fetchRssContent(feedURL string) (string, error) {
 		TLSHandshakeTimeout:   15 * time.Second,
 		ResponseHeaderTimeout: 20 * time.Second,
 	}
+	defer transport.CloseIdleConnections()
 
 	// 设置代理 - 优先从数据库读取，其次使用配置文件
 	proxyEnabled := s.config.Proxy.Enabled
@@ -270,10 +283,10 @@ func (s *RssService) fetchRssContent(feedURL string) (string, error) {
 	var lastErr error
 	for attempt := 1; attempt <= 3; attempt++ {
 		// 修复：每次重试创建新的context和cancel
-		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(s.config.RSS.FetchTimeout)*time.Second)
+		attemptCtx, cancel := context.WithTimeout(ctx, time.Duration(s.config.RSS.FetchTimeout)*time.Second)
 		defer cancel()
 
-		resp, err := client.Do(req.WithContext(ctx))
+		resp, err := client.Do(req.WithContext(attemptCtx))
 		if err != nil {
 			lastErr = err
 			log.Warn().Int("attempt", attempt).Str("url", feedURL).Err(err).Msg("RSS请求失败")
@@ -317,7 +330,11 @@ func (s *RssService) fetchRssContent(feedURL string) (string, error) {
 }
 
 // fetchFullContent 获取网页完整内容
-func (s *RssService) fetchFullContent(pageURL string) (string, error) {
+func (s *RssService) fetchFullContent(ctx context.Context, pageURL string) (string, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	// 创建请求
 	req, err := http.NewRequest("GET", pageURL, nil)
 	if err != nil {
@@ -334,7 +351,7 @@ func (s *RssService) fetchFullContent(pageURL string) (string, error) {
 	if timeout > 10 {
 		timeout = 10
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
+	requestCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
 	defer cancel()
 
 	// 创建独立的transport避免修改共享client
@@ -349,6 +366,7 @@ func (s *RssService) fetchFullContent(pageURL string) (string, error) {
 		TLSHandshakeTimeout:   10 * time.Second,
 		ResponseHeaderTimeout: 10 * time.Second,
 	}
+	defer transport.CloseIdleConnections()
 
 	// 设置代理 - 优先从数据库读取，其次使用配置文件
 	proxyEnabled := s.config.Proxy.Enabled
@@ -375,7 +393,7 @@ func (s *RssService) fetchFullContent(pageURL string) (string, error) {
 	}
 
 	client := &http.Client{Transport: transport}
-	resp, err := client.Do(req.WithContext(ctx))
+	resp, err := client.Do(req.WithContext(requestCtx))
 	if err != nil {
 		return "", err
 	}
@@ -528,12 +546,12 @@ func (s *RssService) isMemoryHigh() bool {
 func (s *RssService) GetAllFeeds(sortBy, sortOrder, search, category string) ([]models.RssFeed, error) {
 	// 校验排序字段（白名单，防止 SQL 注入）
 	validSortFields := map[string]bool{
-		"createdAt":      true,
-		"name":           true,
-		"category":       true,
-		"lastFetchTime":  true,
-		"isActive":       true,
-		"articleCount":   true,
+		"createdAt":     true,
+		"name":          true,
+		"category":      true,
+		"lastFetchTime": true,
+		"isActive":      true,
+		"articleCount":  true,
 	}
 	if !validSortFields[sortBy] {
 		sortBy = "createdAt"
@@ -637,7 +655,7 @@ func (s *RssService) DeleteFeed(id uint) error {
 
 // ValidateFeed 验证RSS源
 func (s *RssService) ValidateFeed(feedURL string) (bool, error) {
-	_, err := s.fetchRssContent(feedURL)
+	_, err := s.fetchRssContent(context.Background(), feedURL)
 	if err != nil {
 		return false, err
 	}

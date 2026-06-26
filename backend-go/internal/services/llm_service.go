@@ -5,21 +5,31 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/raciel/rss-llm-tts/internal/config"
+	"github.com/raciel/rss-llm-tts/internal/models"
+	"github.com/raciel/rss-llm-tts/internal/utils"
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
+)
+
+const (
+	llmRequestTimeout = 120 * time.Second
+	llmMaxRetries     = 3
+	llmMaxContentSize = 1200
 )
 
 type LLMService struct {
 	db      *gorm.DB
 	client  *http.Client
 	config  *config.Config
-	configs map[string]string // 数据库配置
+	configs map[string]string
 }
 
 type DialogueParams struct {
@@ -31,12 +41,12 @@ type DialogueParams struct {
 }
 
 type NewsContent struct {
-	Title      string
-	Summary    string
-	Content    string
-	Source     string
+	Title       string
+	Summary     string
+	Content     string
+	Source      string
 	PublishedAt time.Time
-	Author     string
+	Author      string
 }
 
 type DialogueResult struct {
@@ -48,11 +58,21 @@ type Round struct {
 	Text    string `json:"text"`
 }
 
-func NewLLMService(db *gorm.DB, cfg *config.Config, configs map[string]string) *LLMService {
-	client := &http.Client{
-		Timeout: 60 * time.Second,
-	}
+type chatCompletionResponse struct {
+	Choices []struct {
+		Message struct {
+			Content string `json:"content"`
+		} `json:"message"`
+		FinishReason string `json:"finish_reason"`
+	} `json:"choices"`
+	Error *struct {
+		Message string `json:"message"`
+		Type    string `json:"type"`
+	} `json:"error,omitempty"`
+}
 
+func NewLLMService(db *gorm.DB, cfg *config.Config, configs map[string]string) *LLMService {
+	client := &http.Client{Timeout: llmRequestTimeout}
 	return &LLMService{
 		db:      db,
 		client:  client,
@@ -61,196 +81,166 @@ func NewLLMService(db *gorm.DB, cfg *config.Config, configs map[string]string) *
 	}
 }
 
-// GenerateDialogue 调用LLM生成对话
 func (s *LLMService) GenerateDialogue(params DialogueParams) (*DialogueResult, error) {
-	// 构建新闻内容
-	newsDetails := ""
-	for i, news := range params.NewsContent {
-		newsDetails += fmt.Sprintf("【新闻%d】\n", i+1)
-		newsDetails += fmt.Sprintf("标题: %s\n", news.Title)
-		newsDetails += fmt.Sprintf("摘要: %s\n", news.Summary)
-		newsDetails += fmt.Sprintf("来源: %s\n", news.Source)
-		newsDetails += fmt.Sprintf("发布时间: %s\n", news.PublishedAt.Format("2006-01-02"))
-		if news.Content != "" {
-			summary := news.Content
-			if len(summary) > 500 {
-				summary = summary[:500] + "..."
-			}
-			newsDetails += fmt.Sprintf("详细内容: %s\n", summary)
-		}
-		newsDetails += "\n"
-	}
+	prompt := s.buildPrompt(params)
 
-	// 获取对话类型详情
-	typeDetails := s.getDialogueTypeDetails(params.DialogueType)
-
-	prompt := fmt.Sprintf(`你是一位专业的对话生成专家，请基于以下新闻内容，生成一个高质量的%s对话。
-
-## 对话设置
-- 对话类型：%s
-- 对话特点：%s
-- 参与者：%s、%s
-- 对话轮次：%d轮
-- 对话风格：%s
-
-## 新闻素材
-%s
-
-## 生成要求
-1. **语言要求**：对话内容必须使用中文，除了专业的技术词汇（如API、AI、VR、AR、5G、区块链等）和外国的公司名称（如Google、Microsoft、Apple、Meta等）外，其他内容一律使用中文表达
-2. **口语化表达**：使用自然、流畅的中文口语表达，避免过于书面化的语言
-3. **内容深度**：对话要有深度，不是简单的问答，要有见解和分析
-4. **逻辑连贯**：每轮对话都要自然衔接，逻辑清晰
-5. **角色特色**：%s和%s要有各自的语言特点和观点
-6. **新闻结合**：充分利用提供的新闻内容，引用具体事实和数据
-7. **对话自然**：语言要自然流畅，符合%s的特点
-8. **观点多元**：展现不同角度的思考和讨论
-9. **结构完整**：对话要有开头、发展、高潮和总结
-
-## 输出格式
-请严格按照以下JSON格式输出，不要添加任何其他文字：
-
-{
-  "rounds": [
-    {
-      "speaker": "%s",
-      "text": "具体的对话内容，要丰富详细，至少100字以上，使用中文口语化表达"
-    },
-    {
-      "speaker": "%s",
-      "text": "具体的对话内容，要丰富详细，至少100字以上，使用中文口语化表达"
-    }
-  ]
-}
-
-现在请开始生成对话内容：`,
-		typeDetails.Name,
-		typeDetails.Name,
-		typeDetails.Description,
-		params.Character1,
-		params.Character2,
-		params.Rounds,
-		typeDetails.Style,
-		newsDetails,
-		params.Character1,
-		params.Character2,
-		typeDetails.Name,
-		params.Character1,
-		params.Character2,
-	)
-
-	// 调用LLM API
 	result, err := s.callLLMAPI(prompt)
 	if err != nil {
-		log.Error().Err(err).Msg("LLM API调用失败")
-		// 返回模拟数据作为后备
-		return s.generateMockDialogue(params), nil
+		log.Error().Err(err).Msg("LLM request failed")
+		return nil, err
 	}
 
-	// 解析JSON - 去除markdown代码块
-	jsonStr := result
-	// 去除可能的markdown代码块标记
-	if strings.HasPrefix(strings.TrimSpace(result), "```") {
-		// 找到第一个换行后的内容
-		lines := strings.SplitN(result, "\n", 2)
-		if len(lines) > 1 {
-			jsonStr = strings.TrimSuffix(lines[1], "```")
-			jsonStr = strings.TrimSpace(jsonStr)
-			// 去除可能的 "json" 或其他语言标识
-			if strings.HasPrefix(jsonStr, "json") {
-				jsonStr = strings.TrimPrefix(jsonStr, "json")
-				jsonStr = strings.TrimSpace(jsonStr)
-			}
-		}
+	jsonStr := extractJSONObject(result)
+	if jsonStr == "" {
+		return nil, fmt.Errorf("llm response did not contain a valid JSON object")
 	}
 
 	var dialogue DialogueResult
 	if err := json.Unmarshal([]byte(jsonStr), &dialogue); err != nil {
-		log.Warn().Err(err).Str("result", result[:min(100, len(result))]).Msg("JSON解析失败，使用模拟数据")
-		return s.generateMockDialogue(params), nil
+		log.Warn().
+			Err(err).
+			Str("response", truncateForLog(result, 600)).
+			Msg("Failed to parse LLM JSON response")
+		return nil, fmt.Errorf("failed to parse llm json response: %w", err)
 	}
 
-	// 验证轮次
+	if err := validateDialogueResult(&dialogue, params); err != nil {
+		return nil, err
+	}
+
 	if len(dialogue.Rounds) != params.Rounds {
-		log.Warn().Int("expected", params.Rounds).Int("actual", len(dialogue.Rounds)).Msg("对话轮次不匹配")
+		log.Warn().
+			Int("expected", params.Rounds).
+			Int("actual", len(dialogue.Rounds)).
+			Msg("LLM returned unexpected round count; normalizing result")
 		dialogue.Rounds = s.adjustRounds(dialogue.Rounds, params.Rounds, params.Character1, params.Character2)
 	}
 
 	return &dialogue, nil
 }
 
-// reloadConfigsFromDB 从数据库重新加载配置
-func (s *LLMService) reloadConfigsFromDB() map[string]string {
-	configs := make(map[string]string)
-	var dbConfigs []struct {
-		Key   string
-		Value string
-	}
-	// 读取所有配置（表名是 configs）
-	fmt.Println("=== DEBUG: 开始读取configs表 ===")
-	err := s.db.Table("configs").Select("`key`, `value`").Scan(&dbConfigs).Error
-	if err != nil {
-		fmt.Printf("=== DEBUG: 读取失败: %v ===\n", err)
-		log.Error().Err(err).Msg("读取configs表失败")
-	} else {
-		fmt.Printf("=== DEBUG: 读取到 %d 条配置 ===\n", len(dbConfigs))
-		log.Info().Int("count", len(dbConfigs)).Msg("读取到配置数量")
-		for _, c := range dbConfigs {
-			// 只记录包含 api 的配置
-			if strings.Contains(c.Key, "api") || strings.Contains(c.Key, "llm") {
-				fmt.Printf("=== DEBUG: %s = %s ===\n", c.Key, c.Value)
-				log.Info().Str("key", c.Key).Str("value", c.Value).Msg("数据库配置")
-			}
-			configs[c.Key] = c.Value
+func (s *LLMService) buildPrompt(params DialogueParams) string {
+	var newsDetails strings.Builder
+	for i, news := range params.NewsContent {
+		newsDetails.WriteString(fmt.Sprintf("Article %d\n", i+1))
+		newsDetails.WriteString(fmt.Sprintf("Title: %s\n", news.Title))
+		if news.Summary != "" {
+			newsDetails.WriteString(fmt.Sprintf("Summary: %s\n", news.Summary))
 		}
+		if news.Source != "" {
+			newsDetails.WriteString(fmt.Sprintf("Source: %s\n", news.Source))
+		}
+		if !news.PublishedAt.IsZero() {
+			newsDetails.WriteString(fmt.Sprintf("Published At: %s\n", news.PublishedAt.Format("2006-01-02 15:04:05")))
+		}
+		if news.Author != "" {
+			newsDetails.WriteString(fmt.Sprintf("Author: %s\n", news.Author))
+		}
+		if news.Content != "" {
+			newsDetails.WriteString(fmt.Sprintf("Details: %s\n", truncateForLog(news.Content, llmMaxContentSize)))
+		}
+		newsDetails.WriteString("\n")
 	}
-	return configs
+
+	typeDetails := s.getDialogueTypeDetails(params.DialogueType)
+
+	return fmt.Sprintf(`You are an expert dialogue writer.
+
+Create a high-quality %s conversation in Simplified Chinese.
+
+Requirements:
+1. Return valid JSON only, with no markdown fences and no extra commentary.
+2. The JSON schema must be exactly: {"rounds":[{"speaker":"string","text":"string"}]}.
+3. Produce exactly %d rounds.
+4. Speakers must alternate naturally between "%s" and "%s".
+5. Each round should be substantial, specific, and grounded in the provided articles.
+6. Keep the conversation coherent, insightful, and conversational.
+7. Use Simplified Chinese for the dialogue text, except for standard product, company, or technical names when needed.
+
+Dialogue style:
+- Type: %s
+- Description: %s
+- Tone: %s
+
+Articles:
+%s`, typeDetails.Name, params.Rounds, params.Character1, params.Character2, typeDetails.Name, typeDetails.Description, typeDetails.Style, newsDetails.String())
 }
 
-// callLLMAPI 调用LLM API
+func (s *LLMService) loadRuntimeConfigs() map[string]string {
+	result := map[string]string{
+		"llm_api_url":        s.config.LLM.APIURL,
+		"llm_api_key":        s.config.LLM.APIKey,
+		"llm_model":          s.config.LLM.Model,
+		"http_proxy_enabled": strconv.FormatBool(s.config.Proxy.Enabled),
+		"http_proxy_url":     s.config.Proxy.URL,
+	}
+
+	for key, value := range s.configs {
+		if strings.TrimSpace(value) != "" {
+			result[key] = value
+		}
+	}
+
+	var dbConfigs []models.Config
+	if err := s.db.Find(&dbConfigs).Error; err != nil {
+		log.Warn().Err(err).Msg("Failed to reload configs from database; using cached/runtime values")
+		return result
+	}
+
+	for _, cfg := range dbConfigs {
+		value := cfg.Value
+		if cfg.IsEncrypted && value != "" {
+			decrypted, err := utils.Decrypt(value)
+			if err != nil {
+				log.Warn().Err(err).Str("key", cfg.Key).Msg("Failed to decrypt config value; using stored value")
+			} else {
+				value = decrypted
+			}
+		}
+		if strings.TrimSpace(value) != "" {
+			result[cfg.Key] = value
+		}
+	}
+
+	s.configs = result
+	return result
+}
+
 func (s *LLMService) callLLMAPI(prompt string) (string, error) {
-	// 每次从数据库动态读取最新配置
-	dbConfigs := s.reloadConfigsFromDB()
+	configs := s.loadRuntimeConfigs()
 
-	// 优先从数据库配置读取，fallback到.env配置
-	apiURL := dbConfigs["llm_api_url"]
-	apiKey := dbConfigs["llm_api_key"]
-	model := dbConfigs["llm_model"]
+	apiURL := firstNonEmpty(configs["llm_api_url"], s.config.LLM.APIURL)
+	apiKey := firstNonEmpty(configs["llm_api_key"], s.config.LLM.APIKey)
+	model := firstNonEmpty(configs["llm_model"], s.config.LLM.Model)
 
-	log.Info().Str("api_url", apiURL).Str("model", model).Msg("LLM配置检查（动态读取）")
-
-	// 如果数据库没有配置，使用.env配置
 	if apiURL == "" {
-		apiURL = s.config.LLM.APIURL
-		log.Info().Str("fallback_api_url", apiURL).Msg("使用.env LLM配置")
+		return "", fmt.Errorf("llm api url is not configured")
 	}
 	if apiKey == "" {
-		apiKey = s.config.LLM.APIKey
+		return "", fmt.Errorf("llm api key is not configured")
 	}
 	if model == "" {
-		model = s.config.LLM.Model
+		return "", fmt.Errorf("llm model is not configured")
 	}
 
-	if apiKey == "" {
-		return "", fmt.Errorf("LLM API Key未配置")
-	}
-
-	// 构建请求
 	reqBody := map[string]interface{}{
 		"model": model,
 		"messages": []map[string]string{
 			{
-				"role": "system",
-				"content": fmt.Sprintf("你是一个专业的对话生成助手，擅长根据新闻内容生成高质量的对话。你的对话总是内容丰富、观点深刻、逻辑清晰。你必须严格按照JSON格式输出，不添加任何解释或额外文字。"),
+				"role":    "system",
+				"content": "You write polished Chinese dialogue and must respond with a JSON object only.",
 			},
 			{
-				"role": "user",
+				"role":    "user",
 				"content": prompt,
 			},
 		},
-		"temperature": 0.7,
-		"max_tokens": 4000,
-		"top_p": 0.9,
+		"temperature": 0.3,
+		"max_tokens":  4000,
+		"top_p":       0.9,
+		"response_format": map[string]string{
+			"type": "json_object",
+		},
 	}
 
 	bodyBytes, err := json.Marshal(reqBody)
@@ -258,83 +248,140 @@ func (s *LLMService) callLLMAPI(prompt string) (string, error) {
 		return "", err
 	}
 
-	// 创建请求
-	req, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(bodyBytes))
-	if err != nil {
-		return "", err
-	}
+	proxyURL := resolveProxyURL(configs["http_proxy_enabled"], configs["http_proxy_url"])
+	client := s.newHTTPClient(proxyURL)
 
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+apiKey)
-
-	// 设置代理
-	var proxyURL *url.URL
-	if s.config.Proxy.Enabled && s.config.Proxy.URL != "" {
-		proxyURL, _ = url.Parse(s.config.Proxy.URL)
-	}
-
-	// 使用带超时的上下文（增加到120秒）
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
-
-	if proxyURL != nil {
-		s.client.Transport = &http.Transport{Proxy: http.ProxyURL(proxyURL)}
-	}
-
-	resp, err := s.client.Do(req.WithContext(ctx))
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	// 解析响应
-	var respData map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&respData); err != nil {
-		return "", err
-	}
-
-	// 提取内容
-	if choices, ok := respData["choices"].([]interface{}); ok && len(choices) > 0 {
-		if choice, ok := choices[0].(map[string]interface{}); ok {
-			if message, ok := choice["message"].(map[string]interface{}); ok {
-				if content, ok := message["content"].(string); ok {
-					return content, nil
-				}
-			}
+	var lastErr error
+	for attempt := 1; attempt <= llmMaxRetries; attempt++ {
+		ctx, cancel := context.WithTimeout(context.Background(), llmRequestTimeout)
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, bytes.NewReader(bodyBytes))
+		if err != nil {
+			cancel()
+			return "", err
 		}
+
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+
+		resp, err := client.Do(req)
+		if err != nil {
+			cancel()
+			lastErr = fmt.Errorf("llm request attempt %d failed: %w", attempt, err)
+			log.Warn().Err(lastErr).Int("attempt", attempt).Msg("LLM request error")
+			if attempt < llmMaxRetries {
+				time.Sleep(time.Duration(attempt) * time.Second)
+			}
+			continue
+		}
+
+		responseBody, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		cancel()
+		if readErr != nil {
+			lastErr = fmt.Errorf("failed to read llm response body: %w", readErr)
+			if attempt < llmMaxRetries {
+				time.Sleep(time.Duration(attempt) * time.Second)
+			}
+			continue
+		}
+
+		if resp.StatusCode >= http.StatusBadRequest {
+			lastErr = fmt.Errorf("llm api status %d: %s", resp.StatusCode, truncateForLog(string(responseBody), 800))
+			log.Warn().Err(lastErr).Int("attempt", attempt).Msg("LLM returned non-success status")
+			if attempt < llmMaxRetries {
+				time.Sleep(time.Duration(attempt) * time.Second)
+			}
+			continue
+		}
+
+		var parsed chatCompletionResponse
+		if err := json.Unmarshal(responseBody, &parsed); err != nil {
+			lastErr = fmt.Errorf("failed to decode llm api response: %w", err)
+			log.Warn().
+				Err(lastErr).
+				Int("attempt", attempt).
+				Str("body", truncateForLog(string(responseBody), 800)).
+				Msg("Invalid LLM API response JSON")
+			if attempt < llmMaxRetries {
+				time.Sleep(time.Duration(attempt) * time.Second)
+			}
+			continue
+		}
+
+		if parsed.Error != nil && parsed.Error.Message != "" {
+			lastErr = fmt.Errorf("llm api error: %s", parsed.Error.Message)
+			if attempt < llmMaxRetries {
+				time.Sleep(time.Duration(attempt) * time.Second)
+			}
+			continue
+		}
+
+		if len(parsed.Choices) == 0 {
+			lastErr = fmt.Errorf("llm api returned no choices")
+			if attempt < llmMaxRetries {
+				time.Sleep(time.Duration(attempt) * time.Second)
+			}
+			continue
+		}
+
+		content := strings.TrimSpace(parsed.Choices[0].Message.Content)
+		if content == "" {
+			lastErr = fmt.Errorf("llm api returned empty message content")
+			if attempt < llmMaxRetries {
+				time.Sleep(time.Duration(attempt) * time.Second)
+			}
+			continue
+		}
+
+		return content, nil
 	}
 
-	return "", fmt.Errorf("无法从响应中提取内容")
+	if lastErr == nil {
+		lastErr = fmt.Errorf("llm request failed for an unknown reason")
+	}
+	return "", lastErr
 }
 
-// getDialogueTypeDetails 获取对话类型详情
+func (s *LLMService) newHTTPClient(proxyURL *url.URL) *http.Client {
+	transport := &http.Transport{}
+	if proxyURL != nil {
+		transport.Proxy = http.ProxyURL(proxyURL)
+	}
+
+	return &http.Client{
+		Timeout:   llmRequestTimeout,
+		Transport: transport,
+	}
+}
+
 func (s *LLMService) getDialogueTypeDetails(dialogueType string) DialogueTypeDetails {
 	detailsMap := map[string]DialogueTypeDetails{
 		"interview": {
-			Name:        "访谈",
-			Description: "深度访谈对话，一般由主持人提问，嘉宾回答，注重挖掘观点和见解",
-			Style:       "专业、深入、互动性强",
+			Name:        "interview",
+			Description: "A focused interviewer and guest discussion with clear questions, analysis, and takeaways.",
+			Style:       "professional, analytical, and engaging",
 		},
 		"ceo_interview": {
-			Name:        "CEO采访",
-			Description: "高端商业访谈，探讨企业战略、行业趋势、管理理念等商业话题",
-			Style:       "高端、专业、商业化、具有前瞻性",
+			Name:        "ceo interview",
+			Description: "A business-oriented conversation about strategy, execution, leadership, and market direction.",
+			Style:       "strategic, executive, and insightful",
 		},
 		"commentary": {
-			Name:        "评论对话",
-			Description: "针对时事新闻进行分析评论，展现不同观点和深度思考",
-			Style:       "客观、分析性强、观点鲜明",
+			Name:        "commentary",
+			Description: "A current-events conversation that compares viewpoints and explains implications.",
+			Style:       "sharp, balanced, and thoughtful",
 		},
 		"chat": {
-			Name:        "聊天对话",
-			Description: "轻松的对话交流，更加随意和自然，但仍要有内容深度",
-			Style:       "轻松自然、互动性强、贴近生活",
+			Name:        "chat",
+			Description: "A relaxed but substantive conversation that still delivers clear ideas and depth.",
+			Style:       "natural, conversational, and clear",
 		},
 	}
 
 	if details, ok := detailsMap[dialogueType]; ok {
 		return details
 	}
+
 	return detailsMap["interview"]
 }
 
@@ -344,7 +391,6 @@ type DialogueTypeDetails struct {
 	Style       string
 }
 
-// generateMockDialogue 生成模拟对话（后备方案）
 func (s *LLMService) generateMockDialogue(params DialogueParams) *DialogueResult {
 	rounds := make([]Round, params.Rounds)
 	typeDetails := s.getDialogueTypeDetails(params.DialogueType)
@@ -355,33 +401,28 @@ func (s *LLMService) generateMockDialogue(params DialogueParams) *DialogueResult
 			speaker = params.Character2
 		}
 
-		newsIndex := i % len(params.NewsContent)
-		news := params.NewsContent[newsIndex]
-
-		var text string
-		if i == 0 {
-			text = fmt.Sprintf("欢迎收看今天的%s节目。今天我们要讨论的是关于\"%s\"这个备受关注的话题。%s这个现象引发了广泛的讨论，您怎么看待这个问题？",
-				typeDetails.Name, news.Title, news.Summary)
-		} else if i == params.Rounds-1 {
-			text = fmt.Sprintf("非常感谢您今天的精彩分享。通过今天的讨论，我相信观众朋友们对\"%s\"这个话题有了更深入的理解。您对未来的发展有什么展望吗？",
-				news.Title)
-		} else {
-			topics := []string{"从技术发展的角度来看", "考虑到社会影响方面", "从经济效益的角度分析", "从用户体验的维度思考"}
-			topic := topics[i%len(topics)]
-			text = fmt.Sprintf("您刚才提到的观点很有道理。%s，您认为%s这个现象会对我们的生活产生什么样的影响？", topic, news.Title)
+		newsIndex := 0
+		if len(params.NewsContent) > 0 {
+			newsIndex = i % len(params.NewsContent)
 		}
 
-		rounds[i] = Round{
-			Speaker: speaker,
-			Text:    text,
+		title := "the topic"
+		if len(params.NewsContent) > 0 && params.NewsContent[newsIndex].Title != "" {
+			title = params.NewsContent[newsIndex].Title
 		}
+
+		text := fmt.Sprintf("This is a placeholder %s round about %s.", typeDetails.Name, title)
+		rounds[i] = Round{Speaker: speaker, Text: text}
 	}
 
 	return &DialogueResult{Rounds: rounds}
 }
 
-// adjustRounds 调整对话轮次
 func (s *LLMService) adjustRounds(rounds []Round, target int, char1, char2 string) []Round {
+	if target <= 0 {
+		return []Round{}
+	}
+
 	if len(rounds) > target {
 		return rounds[:target]
 	}
@@ -393,9 +434,87 @@ func (s *LLMService) adjustRounds(rounds []Round, target int, char1, char2 strin
 		}
 		rounds = append(rounds, Round{
 			Speaker: speaker,
-			Text:    "感谢您的分享，这个话题确实值得我们继续深入探讨。",
+			Text:    "Please continue the discussion with a concrete point tied to the news.",
 		})
 	}
 
 	return rounds
+}
+
+func extractJSONObject(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	start := strings.Index(trimmed, "{")
+	end := strings.LastIndex(trimmed, "}")
+	if start == -1 || end == -1 || end < start {
+		return ""
+	}
+
+	return strings.TrimSpace(trimmed[start : end+1])
+}
+
+func validateDialogueResult(dialogue *DialogueResult, params DialogueParams) error {
+	if dialogue == nil {
+		return fmt.Errorf("llm returned an empty dialogue result")
+	}
+	if len(dialogue.Rounds) == 0 {
+		return fmt.Errorf("llm returned zero dialogue rounds")
+	}
+
+	for i := range dialogue.Rounds {
+		dialogue.Rounds[i].Speaker = strings.TrimSpace(dialogue.Rounds[i].Speaker)
+		dialogue.Rounds[i].Text = strings.TrimSpace(dialogue.Rounds[i].Text)
+
+		if dialogue.Rounds[i].Speaker == "" {
+			if i%2 == 0 {
+				dialogue.Rounds[i].Speaker = params.Character1
+			} else {
+				dialogue.Rounds[i].Speaker = params.Character2
+			}
+		}
+
+		if dialogue.Rounds[i].Text == "" {
+			return fmt.Errorf("llm returned an empty text for round %d", i+1)
+		}
+	}
+
+	return nil
+}
+
+func truncateForLog(value string, limit int) string {
+	if limit <= 0 || len(value) <= limit {
+		return value
+	}
+	return value[:limit] + "..."
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+func resolveProxyURL(enabledValue, proxyValue string) *url.URL {
+	if !parseBool(enabledValue) || strings.TrimSpace(proxyValue) == "" {
+		return nil
+	}
+
+	proxyURL, err := url.Parse(strings.TrimSpace(proxyValue))
+	if err != nil {
+		log.Warn().Err(err).Str("proxy", proxyValue).Msg("Invalid proxy URL; ignoring proxy")
+		return nil
+	}
+
+	return proxyURL
+}
+
+func parseBool(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }

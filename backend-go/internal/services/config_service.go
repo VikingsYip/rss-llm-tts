@@ -36,6 +36,7 @@ func (s *ConfigService) GetAllConfigs() (map[string]string, error) {
 		"http_proxy_url":    s.cfg.Proxy.URL,
 		"llm_api_url":       s.cfg.LLM.APIURL,
 		"llm_model":         s.cfg.LLM.Model,
+		"tts_provider":      s.cfg.TTS.Provider,
 		"tts_api_url":       s.cfg.TTS.APIURL,
 		"tts_voice":         s.cfg.TTS.Voice,
 		"tts_voice_host":   s.cfg.TTS.VoiceHost,

@@ -94,6 +94,8 @@ func main() {
 		})
 	})
 
+	r.Static("/uploads", cfg.Storage.UploadPath)
+
 	// API路由
 	api := r.Group("/api")
 	{
@@ -183,7 +185,7 @@ func main() {
 			wechat.GET("/config", wechatMPHandler.GetConfig)
 			wechat.POST("/config", wechatMPHandler.SaveConfig)
 			wechat.POST("/test", wechatMPHandler.TestSend)
-			wechat.POST("/dialogue/:id/push", wechatMPHandler.PushDialogueToDraft)
+			wechat.POST("/dialogue/:id/push", wechatMPHandler.PushDialogueAsText) // 使用文本消息
 			// 微信服务器验证回调
 			wechat.GET("/callback", wechatMPHandler.VerifyServer)
 		}

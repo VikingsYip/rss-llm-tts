@@ -1,12 +1,15 @@
 package services
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -225,6 +228,7 @@ func (s *WeChatMPService) SendTemplateMessage(title, content, url string) error 
 
 // SendTextMessage 发送文本客服消息（不需要media_id）
 func (s *WeChatMPService) SendTextMessage(content string) error {
+	log.Info().Msg(">>> SendTextMessage called <<<")
 	config, err := s.GetConfig()
 	if err != nil {
 		return err
@@ -294,14 +298,107 @@ func (s *WeChatMPService) SendTextMessage(content string) error {
 	return nil
 }
 
+// PushDialogueAsText 将对话推送为文本客服消息
+func (s *WeChatMPService) PushDialogueAsText(title string, rounds []DialogueRound) error {
+	// 构建文本内容
+	var textContent strings.Builder
+	textContent.WriteString(title + "\n\n")
+	for i, r := range rounds {
+		textContent.WriteString(fmt.Sprintf("%d. %s：%s\n", i+1, r.Speaker, r.Text))
+		if (i+1)%2 == 0 {
+			textContent.WriteString("\n")
+		}
+	}
+
+	return s.SendTextMessage(textContent.String())
+}
+
 // DialogueRound 对话轮次结构
 type DialogueRound struct {
 	Speaker string `json:"speaker"`
 	Text    string `json:"text"`
 }
 
+// uploadImageForDraft 上传图片到微信获取media_id（用于草稿封面）
+func (s *WeChatMPService) uploadImageForDraft(imagePath string) (string, error) {
+	log.Info().Str("path", imagePath).Msg(">>> uploadImageForDraft called <<<")
+	if imagePath == "" {
+		return "", fmt.Errorf("图片路径为空")
+	}
+
+	// 打开图片文件
+	file, err := os.Open(imagePath)
+	if err != nil {
+		return "", fmt.Errorf("打开图片文件失败: %v", err)
+	}
+	defer file.Close()
+
+	accessToken, err := s.GetAccessToken()
+	if err != nil {
+		return "", err
+	}
+
+	// 调用永久素材图片上传API
+	apiURL := fmt.Sprintf("https://api.weixin.qq.com/cgi-bin/material/add_material?access_token=%s&type=image", accessToken)
+
+	// 创建multipart表单
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+
+	// 添加图片字段
+	part, err := writer.CreateFormFile("media", imagePath)
+	if err != nil {
+		return "", fmt.Errorf("创建表单文件失败: %v", err)
+	}
+	if _, err := io.Copy(part, file); err != nil {
+		return "", fmt.Errorf("复制文件内容失败: %v", err)
+	}
+	writer.Close()
+
+	// 发送请求
+	req, err := http.NewRequest("POST", apiURL, &buf)
+	if err != nil {
+		return "", fmt.Errorf("创建请求失败: %v", err)
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	client := &http.Client{Timeout: 60 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("上传图片请求失败: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("读取响应失败: %v", err)
+	}
+
+	log.Info().Str("response", string(body)).Msg("上传图片响应")
+
+	// 解析响应
+	var result map[string]interface{}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return "", fmt.Errorf("解析响应失败: %v", err)
+	}
+
+	// 检查错误
+	if errMsg, ok := result["errcode"].(float64); ok && errMsg != 0 {
+		return "", fmt.Errorf("上传图片失败: errcode=%d, errmsg=%v", int(errMsg), result["errmsg"])
+	}
+
+	mediaID, ok := result["media_id"].(string)
+	if !ok {
+		return "", fmt.Errorf("未获取到media_id")
+	}
+
+	log.Info().Str("media_id", mediaID).Msg("图片上传成功")
+	return mediaID, nil
+}
+
 // AddDraft 添加文章到草稿箱
 func (s *WeChatMPService) AddDraft(title, author, content string, rounds []DialogueRound) (string, error) {
+	log.Info().Str("title", title).Msg(">>> AddDraft function called <<<")
 	config, err := s.GetConfig()
 	if err != nil {
 		return "", err
@@ -320,16 +417,33 @@ func (s *WeChatMPService) AddDraft(title, author, content string, rounds []Dialo
 		return "", err
 	}
 
+	// 先上传封面图片获取 thumb_media_id
+	log.Info().Msg("开始封面上传流程...")
+	thumbMediaID, err := s.uploadImageForDraft("D:/YQ/811.jpg")
+	if err != nil {
+		log.Warn().Err(err).Msg("封面上传失败，将创建无封面草稿")
+		thumbMediaID = ""
+	}
+
 	// 构建HTML内容
 	htmlContent := s.buildDialogueHTML(rounds)
 
-	// 调用永久图文素材API（虽然文档说部分废弃，但实际仍可用）
-	apiURL := fmt.Sprintf("https://api.weixin.qq.com/cgi-bin/material/add_news?access_token=%s", accessToken)
+	// 调用草稿箱API draft/add
+	apiURL := fmt.Sprintf("https://api.weixin.qq.com/cgi-bin/draft/add?access_token=%s", accessToken)
 
+	// 构建文章内容（符合文档格式）
 	article := map[string]interface{}{
-		"title":        title,
-		"author":       author,
-		"content":      htmlContent,
+		"title":              title,
+		"author":             author,
+		"content":            htmlContent,
+		"content_source_url": "",
+		"digest":             "",
+		"article_type":       "news",
+	}
+
+	// 添加封面media_id（必填）
+	if thumbMediaID != "" {
+		article["thumb_media_id"] = thumbMediaID
 	}
 
 	articles := []interface{}{article}
@@ -343,7 +457,8 @@ func (s *WeChatMPService) AddDraft(title, author, content string, rounds []Dialo
 		return "", fmt.Errorf("序列化消息失败: %v", err)
 	}
 
-	log.Info().Str("request", string(jsonData)).Msg("微信公众号草稿请求")
+	log.Info().Str("request", string(jsonData)).Msg(">>> NEW CODE: 调用 draft/add API <<<")
+	fmt.Println("=== NEW CODE: draft/add API CALLED ===")
 	fmt.Printf("=== WECHAT DRAFT REQUEST: %s\n", string(jsonData))
 
 	req, err := http.NewRequest("POST", apiURL, strings.NewReader(string(jsonData)))

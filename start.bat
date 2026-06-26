@@ -36,8 +36,8 @@ if not exist "backend\.env" (
 )
 
 :: 安装后端依赖
-echo 正在安装后端依赖...
-cd backend
+::echo 正在安装后端依赖...
+::cd backend
 if not exist "node_modules" (
     npm install
     if errorlevel 1 (
@@ -66,11 +66,11 @@ echo 依赖安装完成，正在启动服务...
 echo.
 
 :: 启动后端服务
-echo 启动后端服务 (端口: 3001)...
-start "RSS系统后端" cmd /k "cd backend && npm run dev  --max-old-space-size=4096"
+::echo 启动后端服务 (端口: 3001)...
+::start "RSS系统后端" cmd /k "cd backend && npm run ::dev  --max-old-space-size=4096"
 
 :: 等待后端启动
-timeout /t 3 /nobreak >nul
+::timeout /t 3 /nobreak >nul
 
 :: 启动前端服务
 echo 启动前端服务 (端口: 3000)...

@@ -80,7 +80,9 @@ const NewsList = () => {
     source: '',
     isRead: '',
     isFavorite: '',
-    isIgnored: ''
+    isIgnored: '',
+    startDate: '',
+    endDate: ''
   });
   const [categories, setCategories] = useState([]);
   const [sources, setSources] = useState([]);
@@ -117,22 +119,28 @@ const NewsList = () => {
         source: searchParams.get('source') || '',
         isRead: searchParams.get('isRead') || '',
         isFavorite: searchParams.get('isFavorite') || '',
-        isIgnored: searchParams.get('isIgnored') || ''
+        isIgnored: searchParams.get('isIgnored') || '',
+        startDate: searchParams.get('startDate') || '',
+        endDate: searchParams.get('endDate') || '',
+        timeFilter: searchParams.get('timeFilter') || ''
       };
       const page = parseInt(searchParams.get('page')) || 1;
       return { filters: urlFilters, page };
     } catch (error) {
       console.error('解析URL参数失败:', error);
-      return { 
+      return {
         filters: {
           keyword: '',
           category: '',
           source: '',
           isRead: '',
           isFavorite: '',
-          isIgnored: ''
-        }, 
-        page: 1 
+          isIgnored: '',
+          startDate: '',
+          endDate: '',
+          timeFilter: ''
+        },
+        page: 1
       };
     }
   };
@@ -326,11 +334,51 @@ const NewsList = () => {
     saveFiltersToCookie(newFilters); // 保存到Cookie
     updateUrlParams(newFilters, 1);
     fetchNews(1, newFilters);
-    
+
     // 在移动端应用筛选后关闭抽屉
     if (isMobile) {
       setFilterDrawerVisible(false);
     }
+  };
+
+  // 处理时间筛选快速按钮
+  const handleTimeFilter = (type) => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const todayStr = `${year}-${month}-${day}`;
+
+    let startDate = '';
+    let endDate = '';
+
+    if (type === 'today24h') {
+      // 今天24小时 - 从今天0点到今天23:59:59
+      startDate = todayStr;
+      endDate = todayStr;
+    } else if (type === 'today1h') {
+      // 今天1小时 - 使用本地时间
+      const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+      const hour = String(oneHourAgo.getHours()).padStart(2, '0');
+      const minute = String(oneHourAgo.getMinutes()).padStart(2, '0');
+      const second = String(oneHourAgo.getSeconds()).padStart(2, '0');
+      startDate = `${todayStr}T${hour}:${minute}:${second}`;
+
+      const nowHour = String(now.getHours()).padStart(2, '0');
+      const nowMinute = String(now.getMinutes()).padStart(2, '0');
+      const nowSecond = String(now.getSeconds()).padStart(2, '0');
+      endDate = `${todayStr}T${nowHour}:${nowMinute}:${nowSecond}`;
+    }
+
+    const newFilters = {
+      ...filters,
+      startDate,
+      endDate,
+      timeFilter: type  // 记录当前选择的时间筛选类型
+    };
+    setFilters(newFilters);
+    updateUrlParams(newFilters, 1);
+    fetchNews(1, newFilters);
   };
 
   // 处理分页
@@ -347,7 +395,10 @@ const NewsList = () => {
       source: '',
       isRead: '',
       isFavorite: '',
-      isIgnored: ''
+      isIgnored: '',
+      startDate: '',
+      endDate: '',
+      timeFilter: ''
     };
     setFilters(newFilters);
     saveFiltersToCookie(newFilters); // 保存到Cookie
@@ -461,19 +512,25 @@ const NewsList = () => {
           </Select>
         </Form.Item>
         
-        <Form.Item label="阅读状态">
-          <Select
-            placeholder="阅读状态"
-            allowClear
-            style={{ width: '100%' }}
-            onChange={(value) => handleFilterChange('isRead', value)}
-            value={filters.isRead}
-          >
-            <Option value="false">未读</Option>
-            <Option value="true">已读</Option>
-          </Select>
+        <Form.Item label="时间筛选">
+          <Space direction="vertical" style={{ width: '100%' }}>
+            <Button
+              type={filters.timeFilter === 'today24h' ? 'primary' : 'default'}
+              block
+              onClick={() => handleTimeFilter('today24h')}
+            >
+              今天24小时
+            </Button>
+            <Button
+              type={filters.timeFilter === 'today1h' ? 'primary' : 'default'}
+              block
+              onClick={() => handleTimeFilter('today1h')}
+            >
+              今天1小时
+            </Button>
+          </Space>
         </Form.Item>
-        
+
         <Form.Item label="收藏状态">
           <Select
             placeholder="收藏状态"
@@ -620,17 +677,20 @@ const NewsList = () => {
                 ))}
               </Select>
               
-              <Select
-                placeholder="阅读状态"
-                allowClear
-                style={{ width: 100 }}
-                onChange={(value) => handleFilterChange('isRead', value)}
-                value={filters.isRead}
+              <Button
+                type={filters.timeFilter === 'today24h' ? 'primary' : 'default'}
+                onClick={() => handleTimeFilter('today24h')}
               >
-                <Option value="false">未读</Option>
-                <Option value="true">已读</Option>
-              </Select>
-              
+                今天24小时
+              </Button>
+
+              <Button
+                type={filters.timeFilter === 'today1h' ? 'primary' : 'default'}
+                onClick={() => handleTimeFilter('today1h')}
+              >
+                今天1小时
+              </Button>
+
               <Select
                 placeholder="收藏状态"
                 allowClear

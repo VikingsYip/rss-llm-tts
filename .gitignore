@@ -16,3 +16,29 @@ bin-release/
 # Project files, i.e. `.project`, `.actionScriptProperties` and `.flexProperties`
 # should NOT be excluded as they contain compiler settings and other important
 # information for Eclipse / Flash Builder.
+
+# Dependencies
+node_modules/
+
+# Frontend build output
+dist/
+frontend/dist/
+
+# Local environment and runtime files
+.env
+*.log
+nul
+.claude/
+
+# Generated media and uploads
+uploads/
+backend/uploads/
+backend-go/uploads/
+
+# Local binaries
+*.exe
+*.exe~
+*.exe.prev
+
+# Temporary workspaces
+.tmp-*/

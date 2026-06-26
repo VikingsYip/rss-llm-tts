@@ -46,6 +46,7 @@ type LLMConfig struct {
 }
 
 type TTSConfig struct {
+	Provider     string
 	APIURL       string
 	APIKey       string
 	Voice        string
@@ -120,11 +121,12 @@ func LoadConfig() (*Config, error) {
 			Model:  getEnv("LLM_MODEL", "gpt-3.5-turbo"),
 		},
 		TTS: TTSConfig{
+			Provider:   getEnv("TTS_PROVIDER", "edge"),
 			APIURL:     getEnv("TTS_API_URL", "https://api.openai.com/v1/audio/speech"),
 			APIKey:     getEnv("TTS_API_KEY", ""),
-			Voice:      getEnv("TTS_VOICE", "alloy"),
-			VoiceHost:  getEnv("TTS_VOICE_HOST", "alloy"),
-			VoiceGuest: getEnv("TTS_VOICE_GUEST", "nova"),
+			Voice:      getEnv("TTS_VOICE", "zh-CN-XiaoxiaoNeural"),
+			VoiceHost:  getEnv("TTS_VOICE_HOST", "zh-CN-YunxiNeural"),
+			VoiceGuest: getEnv("TTS_VOICE_GUEST", "zh-CN-XiaoxiaoNeural"),
 		},
 		Proxy: ProxyConfig{
 			Enabled: getEnvBool("HTTP_PROXY_ENABLED", false),
