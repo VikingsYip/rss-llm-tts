@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 
@@ -12,18 +13,23 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// WeChatMPHandler 微信公众号处理器
 type WeChatMPHandler struct {
 	wechatSvc *services.WeChatMPService
 }
 
-func NewWeChatMPHandler(wechatSvc *services.WeChatMPService) *WeChatMPHandler {
-	return &WeChatMPHandler{
-		wechatSvc: wechatSvc,
-	}
+type storedDialogueRound struct {
+	Speaker string `json:"speaker"`
+	Text    string `json:"text"`
 }
 
-// GetConfig 获取公众号配置
+type wrappedDialogueContent struct {
+	Rounds []storedDialogueRound `json:"rounds"`
+}
+
+func NewWeChatMPHandler(wechatSvc *services.WeChatMPService) *WeChatMPHandler {
+	return &WeChatMPHandler{wechatSvc: wechatSvc}
+}
+
 func (h *WeChatMPHandler) GetConfig(c *gin.Context) {
 	config, err := h.wechatSvc.GetConfig()
 	if err != nil {
@@ -33,7 +39,6 @@ func (h *WeChatMPHandler) GetConfig(c *gin.Context) {
 	Success(c, config)
 }
 
-// SaveConfig 保存公众号配置
 func (h *WeChatMPHandler) SaveConfig(c *gin.Context) {
 	var input models.WeChatMPConfig
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -49,13 +54,11 @@ func (h *WeChatMPHandler) SaveConfig(c *gin.Context) {
 	Success(c, gin.H{"message": "配置保存成功"})
 }
 
-// TestSend 测试发送模板消息
 func (h *WeChatMPHandler) TestSend(c *gin.Context) {
 	var input struct {
 		Title   string `json:"title"`
 		Content string `json:"content"`
 	}
-
 	if err := c.ShouldBindJSON(&input); err != nil {
 		Error(c, http.StatusBadRequest, err.Error())
 		return
@@ -69,7 +72,6 @@ func (h *WeChatMPHandler) TestSend(c *gin.Context) {
 	Success(c, gin.H{"message": "测试消息发送成功"})
 }
 
-// VerifyServer 验证微信服务器
 func (h *WeChatMPHandler) VerifyServer(c *gin.Context) {
 	signature := c.Query("signature")
 	timestamp := c.Query("timestamp")
@@ -85,55 +87,19 @@ func (h *WeChatMPHandler) VerifyServer(c *gin.Context) {
 	c.String(http.StatusOK, result)
 }
 
-// PushDialogueAsText 将对话推送到微信公众号（文本消息）
 func (h *WeChatMPHandler) PushDialogueAsText(c *gin.Context) {
-	log.Info().Msg(">>> PushDialogueAsText handler called <<<")
-	dialogueIDStr := c.Param("id")
-	var dialogueID uint
-	if _, err := fmt.Sscanf(dialogueIDStr, "%d", &dialogueID); err != nil {
-		Error(c, http.StatusBadRequest, "无效的对话ID")
-		return
-	}
+	log.Info().Msg("PushDialogueAsText called")
 
-	// 获取对话详情
-	var dialogue models.Dialogue
-	if err := h.wechatSvc.GetDB().First(&dialogue, dialogueID).Error; err != nil {
-		Error(c, http.StatusNotFound, "对话不存在")
-		return
-	}
-
-	if dialogue.Status != "completed" {
-		Error(c, http.StatusBadRequest, "只有已完成的对话才能推送")
-		return
-	}
-
-	// 解析对话内容
-	var content []map[string]string
-	if err := json.Unmarshal([]byte(dialogue.Content), &content); err != nil {
-		Error(c, http.StatusInternalServerError, "解析对话内容失败")
-		return
-	}
-
-	// 转换为DialogueRound格式
-	rounds := make([]services.DialogueRound, len(content))
-	for i, round := range content {
-		speaker := ""
-		text := ""
-		if v, ok := round["speaker"]; ok {
-			speaker = v
-		}
-		if v, ok := round["text"]; ok {
-			text = v
-		}
-		rounds[i] = services.DialogueRound{
-			Speaker: speaker,
-			Text:    text,
-		}
-	}
-
-	// 直接调用 SendTextMessage（文本客服消息）
-	err := h.wechatSvc.SendTextMessage(fmt.Sprintf("%s\n\n%s", dialogue.Title, formatRounds(rounds)))
+	dialogueID, rounds, dialogueTitle, err := h.loadDialogueRounds(c.Param("id"))
 	if err != nil {
+		Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	if dialogueID == 0 {
+		return
+	}
+
+	if err := h.wechatSvc.SendTextMessage(fmt.Sprintf("%s\n\n%s", dialogueTitle, formatRounds(rounds))); err != nil {
 		Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -141,7 +107,133 @@ func (h *WeChatMPHandler) PushDialogueAsText(c *gin.Context) {
 	Success(c, gin.H{"message": "推送成功"})
 }
 
-// formatRounds 格式化对话轮次
+func (h *WeChatMPHandler) PushDialogueToDraft(c *gin.Context) {
+	dialogueID, rounds, dialogueTitle, err := h.loadDialogueRounds(c.Param("id"))
+	if err != nil {
+		Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	if dialogueID == 0 {
+		return
+	}
+
+	mediaID, err := h.wechatSvc.AddDraft(dialogueTitle, "vikingsyip", "", rounds)
+	if err != nil {
+		Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	Success(c, gin.H{
+		"message": "草稿创建成功",
+		"mediaId": mediaID,
+	})
+}
+
+func (h *WeChatMPHandler) CreateArticleDraft(c *gin.Context) {
+	rawBody, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		log.Error().
+			Err(err).
+			Str("contentType", c.GetHeader("Content-Type")).
+			Msg("CreateArticleDraft failed to read request body")
+		Error(c, http.StatusBadRequest, "failed to read request body: "+err.Error())
+		return
+	}
+
+	log.Info().
+		Str("contentType", c.GetHeader("Content-Type")).
+		Int("bodyLength", len(rawBody)).
+		Msg("CreateArticleDraft raw request received")
+
+	var input services.WeChatDraftArticleInput
+	if err := json.Unmarshal(rawBody, &input); err != nil {
+		preview := string(rawBody)
+		if len(preview) > 800 {
+			preview = preview[:800]
+		}
+		log.Error().
+			Err(err).
+			Str("contentType", c.GetHeader("Content-Type")).
+			Int("bodyLength", len(rawBody)).
+			Str("bodyPreview", preview).
+			Msg("CreateArticleDraft JSON bind failed")
+		Error(c, http.StatusBadRequest, "invalid JSON payload: "+err.Error())
+		return
+	}
+
+	log.Info().
+		Str("title", input.Title).
+		Str("author", input.Author).
+		Str("coverImagePath", input.CoverImagePath).
+		Int("inlineImageCount", len(input.InlineImagePaths)).
+		Int("contentLength", len(input.Content)).
+		Msg("CreateArticleDraft request received")
+
+	mediaID, err := h.wechatSvc.CreateArticleDraft(input)
+	if err != nil {
+		log.Error().Err(err).Str("title", input.Title).Msg("CreateArticleDraft failed")
+		Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	Success(c, gin.H{
+		"message": "草稿创建成功",
+		"mediaId": mediaID,
+	})
+}
+
+func (h *WeChatMPHandler) loadDialogueRounds(dialogueIDStr string) (uint, []services.DialogueRound, string, error) {
+	var dialogueID uint
+	if _, err := fmt.Sscanf(dialogueIDStr, "%d", &dialogueID); err != nil {
+		return 0, nil, "", fmt.Errorf("无效的对话 ID")
+	}
+
+	var dialogue models.Dialogue
+	if err := h.wechatSvc.GetDB().First(&dialogue, dialogueID).Error; err != nil {
+		return 0, nil, "", fmt.Errorf("对话不存在")
+	}
+	if dialogue.Status != "completed" {
+		return 0, nil, "", fmt.Errorf("只有已完成的对话才能推送")
+	}
+
+	rounds, err := parseDialogueRounds(dialogue.Content)
+	if err != nil {
+		log.Error().
+			Err(err).
+			Uint("dialogueID", dialogueID).
+			Int("contentLength", len(dialogue.Content)).
+			Msg("loadDialogueRounds failed")
+		return 0, nil, "", fmt.Errorf("解析对话内容失败")
+	}
+
+	return dialogueID, rounds, dialogue.Title, nil
+}
+
+func parseDialogueRounds(content string) ([]services.DialogueRound, error) {
+	var wrapped wrappedDialogueContent
+	if err := json.Unmarshal([]byte(content), &wrapped); err == nil && len(wrapped.Rounds) > 0 {
+		return convertStoredRounds(wrapped.Rounds), nil
+	}
+
+	var direct []storedDialogueRound
+	if err := json.Unmarshal([]byte(content), &direct); err == nil && len(direct) > 0 {
+		return convertStoredRounds(direct), nil
+	}
+
+	return nil, fmt.Errorf("unsupported dialogue content format")
+}
+
+func convertStoredRounds(input []storedDialogueRound) []services.DialogueRound {
+	rounds := make([]services.DialogueRound, 0, len(input))
+	for _, round := range input {
+		rounds = append(rounds, services.DialogueRound{
+			Speaker: round.Speaker,
+			Text:    round.Text,
+		})
+	}
+	return rounds
+}
+
 func formatRounds(rounds []services.DialogueRound) string {
 	var sb strings.Builder
 	for i, r := range rounds {
@@ -151,60 +243,4 @@ func formatRounds(rounds []services.DialogueRound) string {
 		}
 	}
 	return sb.String()
-}
-
-// PushDialogueToDraft 将对话推送到微信公众号草稿箱
-func (h *WeChatMPHandler) PushDialogueToDraft(c *gin.Context) {
-	dialogueIDStr := c.Param("id")
-	var dialogueID uint
-	if _, err := fmt.Sscanf(dialogueIDStr, "%d", &dialogueID); err != nil {
-		Error(c, http.StatusBadRequest, "无效的对话ID")
-		return
-	}
-
-	// 获取对话详情
-	var dialogue models.Dialogue
-	if err := h.wechatSvc.GetDB().First(&dialogue, dialogueID).Error; err != nil {
-		Error(c, http.StatusNotFound, "对话不存在")
-		return
-	}
-
-	if dialogue.Status != "completed" {
-		Error(c, http.StatusBadRequest, "只有已完成的对话才能推送")
-		return
-	}
-
-	// 解析对话内容
-	var content []map[string]string
-	if err := json.Unmarshal([]byte(dialogue.Content), &content); err != nil {
-		Error(c, http.StatusInternalServerError, "解析对话内容失败")
-		return
-	}
-
-	// 转换为DialogueRound格式
-	rounds := make([]services.DialogueRound, len(content))
-	for i, round := range content {
-		speaker := ""
-		text := ""
-		if v, ok := round["speaker"]; ok {
-			speaker = v
-		}
-		if v, ok := round["text"]; ok {
-			text = v
-		}
-		rounds[i] = services.DialogueRound{
-			Speaker: speaker,
-			Text:    text,
-		}
-	}
-
-	// 推送到微信公众号（文本客服消息）
-	log.Info().Msg(">>> HANDLER: Using PushDialogueAsText <<<")
-	err := h.wechatSvc.PushDialogueAsText(dialogue.Title, rounds)
-	if err != nil {
-		Error(c, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	Success(c, gin.H{"message": "推送成功"})
 }

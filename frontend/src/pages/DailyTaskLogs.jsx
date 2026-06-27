@@ -59,7 +59,7 @@ const DailyTaskLogs = () => {
       onOk: async () => {
         try {
           message.loading('正在推送...', 0);
-          const response = await fetch(`/api/wechat-mp/dialogue/${log.dialogueId}/push`, {
+          const response = await fetch(`/api/wechat-mp/dialogue/${log.dialogueId}/draft`, {
             method: 'POST',
           });
 

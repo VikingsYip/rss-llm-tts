@@ -17,65 +17,50 @@ import (
 )
 
 func main() {
-	// 初始化日志
 	middleware.InitLogger("./logs")
-	log.Info().Msg("=== RSS-LLM-TTS Backend (Go) 启动中 ===")
+	log.Info().Msg("=== RSS-LLM-TTS Backend (Go) Starting ===")
 
-	// 加载配置
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		log.Fatal().Err(err).Msg("配置加载失败")
+		log.Fatal().Err(err).Msg("failed to load config")
 		return
 	}
 
-	// 等待数据库连接
-	log.Info().Msg("正在连接数据库...")
+	log.Info().Msg("connecting to database")
 	if err := config.WaitForDB(cfg.GetDSN(), 10, 3*time.Second); err != nil {
-		log.Fatal().Err(err).Msg("数据库连接失败")
+		log.Fatal().Err(err).Msg("database connection failed")
 		return
 	}
 
-	// 初始化数据库
 	db, err := database.InitDB(cfg)
 	if err != nil {
-		log.Fatal().Err(err).Msg("数据库初始化失败")
+		log.Fatal().Err(err).Msg("failed to initialize database")
 		return
 	}
 	defer database.CloseDB()
 
-	// 初始化服务
 	configService := services.NewConfigService(db, cfg)
 	newsService := services.NewNewsService(db)
 	rssService := services.NewRssService(db, cfg, configService)
-	// 初始化任务日志服务
 	jobLogService := services.NewJobLogService(db)
-	// 初始化微信公众号服务
 	wechatMPService := services.NewWeChatMPService(db)
-	// 获取配置供各服务使用
 	appConfigs, _ := configService.GetAllConfigs()
 	llmService := services.NewLLMService(db, cfg, appConfigs)
 	ttsService := services.NewTTSService(db, cfg, appConfigs)
 	dialogueService := services.NewDialogueService(db, llmService, ttsService, newsService, configService)
-	// 初始化每日任务服务
 	dailyTaskService := services.NewDailyTaskService(db, llmService, wechatMPService, cfg)
 
-	// 初始化调度器
 	scheduler := services.NewScheduler(rssService, jobLogService, dailyTaskService)
 	if err := scheduler.Start(); err != nil {
-		log.Error().Err(err).Msg("调度器启动失败")
+		log.Error().Err(err).Msg("failed to start scheduler")
 	}
 
-	// 启动内存监控
 	services.StartMemoryMonitor(5 * time.Minute)
 
-	// 创建Gin引擎
 	r := gin.Default()
-
-	// 添加中间件
 	r.Use(middleware.CORS())
 	r.Use(middleware.Logger())
 
-	// 创建处理器
 	rssHandler := handlers.NewRssHandler(rssService, newsService)
 	newsHandler := handlers.NewNewsHandler(newsService)
 	dialogueHandler := handlers.NewDialogueHandler(dialogueService)
@@ -84,11 +69,10 @@ func main() {
 	wechatMPHandler := handlers.NewWeChatMPHandler(wechatMPService)
 	dailyTaskHandler := handlers.NewDailyTaskHandler(dailyTaskService, scheduler)
 
-	// 健康检查
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{
 			"success":   true,
-			"message":   "服务运行正常",
+			"message":   "service is running",
 			"timestamp": time.Now().Format(time.RFC3339),
 			"version":   "Go 1.0",
 		})
@@ -96,10 +80,8 @@ func main() {
 
 	r.Static("/uploads", cfg.Storage.UploadPath)
 
-	// API路由
 	api := r.Group("/api")
 	{
-		// RSS路由
 		rss := api.Group("/rss")
 		{
 			rss.GET("/feeds", rssHandler.GetFeeds)
@@ -130,7 +112,6 @@ func main() {
 				}
 				handlers.Success(c, gin.H{"message": "任务已触发"})
 			})
-			// 任务日志路由
 			rss.GET("/job-logs", jobHandler.GetLogs)
 			rss.GET("/job-logs/:id", jobHandler.GetLogByID)
 			rss.GET("/job-logs/stats", jobHandler.GetStats)
@@ -141,7 +122,6 @@ func main() {
 			})
 		}
 
-		// 新闻路由
 		news := api.Group("/news")
 		{
 			news.GET("", newsHandler.GetNews)
@@ -153,7 +133,6 @@ func main() {
 			news.GET("/stats/categories", newsHandler.GetCategoryStats)
 		}
 
-		// 对话路由
 		dialogue := api.Group("/dialogue")
 		{
 			dialogue.POST("", dialogueHandler.CreateDialogue)
@@ -165,32 +144,30 @@ func main() {
 			dialogue.GET("/stats/overview", dialogueHandler.GetDialogueStats)
 		}
 
-		// 配置路由
-		config := api.Group("/config")
+		configGroup := api.Group("/config")
 		{
-			config.GET("", configHandler.GetConfigs)
-			config.PUT("", configHandler.UpdateConfig)
-			config.PUT("/batch", configHandler.BatchUpdateConfig)
-			config.POST("/system", configHandler.SaveSystemSettings)
-			config.GET("/:key", configHandler.GetConfig)
-			config.DELETE("/:key", configHandler.DeleteConfig)
-			config.POST("/test/llm", configHandler.TestLLM)
-			config.POST("/test/tts", configHandler.TestTTS)
-			config.POST("/test/proxy", configHandler.TestProxy)
+			configGroup.GET("", configHandler.GetConfigs)
+			configGroup.PUT("", configHandler.UpdateConfig)
+			configGroup.PUT("/batch", configHandler.BatchUpdateConfig)
+			configGroup.POST("/system", configHandler.SaveSystemSettings)
+			configGroup.GET("/:key", configHandler.GetConfig)
+			configGroup.DELETE("/:key", configHandler.DeleteConfig)
+			configGroup.POST("/test/llm", configHandler.TestLLM)
+			configGroup.POST("/test/tts", configHandler.TestTTS)
+			configGroup.POST("/test/proxy", configHandler.TestProxy)
 		}
 
-		// 微信公众号配置
 		wechat := api.Group("/wechat-mp")
 		{
 			wechat.GET("/config", wechatMPHandler.GetConfig)
 			wechat.POST("/config", wechatMPHandler.SaveConfig)
 			wechat.POST("/test", wechatMPHandler.TestSend)
-			wechat.POST("/dialogue/:id/push", wechatMPHandler.PushDialogueAsText) // 使用文本消息
-			// 微信服务器验证回调
+			wechat.POST("/dialogue/:id/push", wechatMPHandler.PushDialogueAsText)
+			wechat.POST("/dialogue/:id/draft", wechatMPHandler.PushDialogueToDraft)
+			wechat.POST("/drafts/article", wechatMPHandler.CreateArticleDraft)
 			wechat.GET("/callback", wechatMPHandler.VerifyServer)
 		}
 
-		// 每日定时任务配置
 		dailyTask := api.Group("/daily-task")
 		{
 			dailyTask.GET("/config", dailyTaskHandler.GetConfig)
@@ -200,25 +177,20 @@ func main() {
 		}
 	}
 
-	// 启动服务器
 	addr := fmt.Sprintf(":%s", cfg.Server.Port)
-	log.Info().Str("addr", addr).Msg("服务器启动成功")
+	log.Info().Str("addr", addr).Msg("server started")
 
-	// 优雅关闭
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
 		if err := r.Run(addr); err != nil {
-			log.Fatal().Err(err).Msg("服务器启动失败")
+			log.Fatal().Err(err).Msg("server failed")
 		}
 	}()
 
 	<-quit
-	log.Info().Msg("正在关闭服务器...")
-
-	// 停止调度器
+	log.Info().Msg("shutting down server")
 	scheduler.Stop()
-
-	log.Info().Msg("服务器已关闭")
+	log.Info().Msg("server stopped")
 }

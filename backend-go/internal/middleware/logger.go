@@ -1,7 +1,9 @@
 package middleware
 
 import (
+	"io"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -17,32 +19,45 @@ func Logger() gin.HandlerFunc {
 
 		c.Next()
 
-		latency := time.Since(start)
-		status := c.Writer.Status()
-
 		log.Info().
 			Str("method", method).
 			Str("path", path).
-			Int("status", status).
-			Dur("latency", latency).
+			Int("status", c.Writer.Status()).
+			Dur("latency", time.Since(start)).
 			Str("ip", c.ClientIP()).
-			Msg("HTTP请求")
+			Msg("HTTP request")
 	}
 }
 
 func InitLogger(logPath string) {
-	// 创建日志目录
-	if err := os.MkdirAll(logPath, 0755); err != nil {
-		log.Error().Err(err).Msg("无法创建日志目录")
+	baseDir, err := os.Executable()
+	if err != nil {
+		baseDir = "."
+	}
+	resolvedLogPath := filepath.Join(filepath.Dir(baseDir), logPath)
+
+	if err := os.MkdirAll(resolvedLogPath, 0755); err != nil {
+		log.Error().Err(err).Msg("failed to create log directory")
+		return
 	}
 
-	// 配置zerolog
 	zerolog.TimeFieldFormat = time.RFC3339
 	zerolog.SetGlobalLevel(zerolog.InfoLevel)
 
-	// 输出到控制台和文件
-	consoleWriter := zerolog.ConsoleWriter{Out: os.Stdout}
-	log.Logger = log.Output(consoleWriter)
+	logFilePath := filepath.Join(resolvedLogPath, "backend-"+time.Now().Format("2006-01-02")+".log")
+	logFile, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		log.Error().Err(err).Str("path", logFilePath).Msg("failed to open log file")
+		consoleWriter := zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339}
+		log.Logger = zerolog.New(consoleWriter).With().Timestamp().Logger()
+		return
+	}
 
-	log.Info().Msg("日志系统初始化完成")
+	consoleWriter := zerolog.ConsoleWriter{
+		Out:        os.Stdout,
+		TimeFormat: time.RFC3339,
+	}
+	multi := io.MultiWriter(consoleWriter, logFile)
+	log.Logger = zerolog.New(multi).With().Timestamp().Logger()
+	log.Info().Str("logFile", logFilePath).Msg("logger initialized")
 }
